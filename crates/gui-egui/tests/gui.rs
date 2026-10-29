@@ -100,6 +100,12 @@ fn human_turn(harness: &mut Harness<'_, GrandCoachApp>, rng: &mut ChaCha8Rng) ->
         }
         _ => pick(rng, legal),
     };
+    perform(harness, &view, action);
+    Some(action)
+}
+
+/// Clicks the widgets for one human action.
+fn perform(harness: &mut Harness<'_, GrandCoachApp>, view: &TableView, action: Action) {
     match action {
         Action::Bid(value) => button(harness, &format!("{value} sagen")),
         Action::Hold => button(harness, &format!("Ja, {} halten", view.bid)),
@@ -119,7 +125,6 @@ fn human_turn(harness: &mut Harness<'_, GrandCoachApp>, rng: &mut ChaCha8Rng) ->
         Action::Re => button(harness, "Re"),
         Action::KeinRe => button(harness, "Kein Re"),
     }
-    Some(action)
 }
 
 fn announce(harness: &mut Harness<'_, GrandCoachApp>, a: Announcement) {
@@ -324,4 +329,163 @@ fn every_card_face_renders() {
             "{path} looks like another card"
         );
     }
+}
+
+/// Kind of a human decision, for coverage.
+fn kind(action: Action) -> String {
+    match action {
+        Action::Bid(_) => "Bid".to_owned(),
+        Action::Discard(_) => "Discard".to_owned(),
+        Action::Play(_) => "Play".to_owned(),
+        Action::Announce(a) => {
+            let family = match a.game {
+                GameType::Farbe(_) => "Farbe",
+                GameType::Grand => "Grand",
+                GameType::Null => "Null",
+            };
+            format!("{family} s={} z={} o={}", a.schneider, a.schwarz, a.ouvert)
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn every_decision_and_variant_is_clickable() {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut hand_variants = std::collections::BTreeMap::new();
+    let mut clicks = std::collections::BTreeMap::new();
+    for seed in 100..140 {
+        let config = SessionConfig {
+            seed,
+            series: SeriesLength::Fixed(6),
+            kontra_re: true,
+        };
+        let mut harness = harness(config);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        while !view(&harness).series_finished {
+            settle(&mut harness);
+            if view(&harness).series_finished {
+                break;
+            }
+            let v = view(&harness);
+            // Announce the variant clicked least so far, to cover all.
+            let least_seen = v
+                .legal_actions
+                .iter()
+                .copied()
+                .filter(|a| matches!(a, Action::Announce(_)))
+                .min_by_key(|&a| {
+                    let key = (kind(a), v.hand_game == Some(true));
+                    hand_variants.get(&key).copied().unwrap_or(0)
+                });
+            // Likewise for the other decisions except card choices.
+            let simple = v
+                .legal_actions
+                .iter()
+                .copied()
+                .filter(|a| {
+                    !matches!(
+                        a,
+                        Action::Play(_) | Action::Discard(_) | Action::Announce(_)
+                    )
+                })
+                .filter(|a| !matches!(a, Action::Bid(_)) || v.legal_actions.first() == Some(a))
+                .min_by_key(|&a| clicks.get(&kind(a)).copied().unwrap_or(0));
+            let action = match (least_seen, simple) {
+                (Some(Action::Announce(a)), _) if v.acting == Some(PlayerId::HUMAN) => {
+                    announce(&mut harness, a);
+                    Some(Action::Announce(a))
+                }
+                (_, Some(a)) if v.acting == Some(PlayerId::HUMAN) => {
+                    perform(&mut harness, &v, a);
+                    Some(a)
+                }
+                _ => human_turn(&mut harness, &mut rng),
+            };
+            if let Some(a) = action {
+                *clicks.entry(kind(a)).or_insert(0) += 1;
+            }
+            if let Some(action) = action {
+                seen.insert(kind(action));
+                if let (Action::Announce(_), Some(c)) = (action, view(&harness).contract) {
+                    *hand_variants.entry((kind(action), c.hand)).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    let mut wanted: Vec<String> = ["Bid", "Hold", "Pass", "Hand", "TakeSkat", "Discard", "Play"]
+        .map(str::to_owned)
+        .to_vec();
+    // Kontra by the human; Re/KeinRe answer an opponent's Kontra. Opponents
+    // never play Ouvert, so the human's Ouvert Kontra round cannot occur.
+    wanted.extend(["Kontra", "Re", "KeinRe"].map(str::to_owned));
+    for family in ["Farbe", "Grand"] {
+        for (s, z, o) in [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, true, true),
+        ] {
+            wanted.push(format!("{family} s={s} z={z} o={o}"));
+        }
+    }
+    wanted.push("Null s=false z=false o=false".to_owned());
+    wanted.push("Null s=false z=false o=true".to_owned());
+    let missing: Vec<_> = wanted.iter().filter(|k| !seen.contains(*k)).collect();
+    assert!(missing.is_empty(), "never clicked: {missing:?}");
+    for hand in [false, true] {
+        for ouvert in [false, true] {
+            let null = (format!("Null s=false z=false o={ouvert}"), hand);
+            assert!(hand_variants.contains_key(&null), "missing {null:?}");
+        }
+        let plain = ("Grand s=false z=false o=false".to_owned(), hand);
+        assert!(hand_variants.contains_key(&plain), "missing {plain:?}");
+    }
+}
+
+#[test]
+fn table_shows_phase_turn_announcements_tricks_and_sheet() {
+    let config = SessionConfig {
+        seed: 21,
+        series: SeriesLength::Fixed(3),
+        kontra_re: true,
+    };
+    let mut harness = harness(config);
+    settle(&mut harness);
+    harness.get_by_label("Reizen");
+    harness.get_by_label("Am Zug: Du");
+    harness.get_by_label("Spielliste");
+    harness.get_by_label("Letzter Stich");
+    harness.get_by_label("Seed 21");
+    // The ten hand cards are buttons.
+    assert!(harness.get_all_by_role(Role::Button).count() >= 10);
+    let mut rng = ChaCha8Rng::seed_from_u64(21);
+    let mut saw_current = false;
+    let mut saw_announcement = false;
+    let mut saw_last_winner = false;
+    while view(&harness).acting.is_some() {
+        settle(&mut harness);
+        let v = view(&harness);
+        if let Some(contract) = v.contract {
+            let game = game_label(contract.game);
+            saw_announcement |= harness.query_all_by_label_contains(game).next().is_some();
+        }
+        if !v.current_trick.is_empty() {
+            saw_current |= harness
+                .query_all_by_label("Aktueller Stich")
+                .next()
+                .is_some();
+        }
+        saw_last_winner |= harness
+            .query_all_by_label_contains(" sticht (")
+            .next()
+            .is_some();
+        if v.acting == Some(PlayerId::HUMAN) {
+            human_turn(&mut harness, &mut rng);
+        }
+    }
+    assert!(saw_current && saw_announcement && saw_last_winner);
+    // After the game the result and the sheet line are visible.
+    harness.get_by_label("Ergebnis");
+    harness.get_by_label("Nächstes Spiel");
 }

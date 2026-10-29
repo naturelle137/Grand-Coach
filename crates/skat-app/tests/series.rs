@@ -58,6 +58,7 @@ fn play_series(session: &mut Session, rng: &mut ChaCha8Rng) -> Vec<AppEvent> {
 
 #[test]
 fn fixed_series_of_36_games() {
+    let mut thrown_in = 0;
     for seed in 0..6 {
         let mut session = Session::new(config(seed, SeriesLength::Fixed(36), seed % 2 == 0));
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -98,6 +99,7 @@ fn fixed_series_of_36_games() {
                     }
                 }
                 (None, None) => {
+                    thrown_in += 1;
                     assert!(record.eingepasst());
                     assert_eq!(record.points, [0; 3]);
                 }
@@ -127,6 +129,7 @@ fn fixed_series_of_36_games() {
             Err(AppError::SeriesFinished)
         );
     }
+    assert!(thrown_in > 0, "no thrown-in deal was covered");
 }
 
 #[test]

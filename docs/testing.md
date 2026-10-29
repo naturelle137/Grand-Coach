@@ -63,7 +63,7 @@ actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 | Component (service) | one crate through its public API, fixed deals | `crates/*/tests/` | test |
 | Interface / contract | serde round-trips, determinism (seed → deal, replay); `skat-app` commands, events, view models and errors as JSON | `skat-core/tests/serde.rs`, `skat-app/tests/series.rs` | test |
 | System | whole games end to end: 10,000 seeded random games against an independent rule model; complete seeded 36-game series with a random human, information boundary of the human's view, opponent self-play | `skat-core/tests/random_games.rs`, `skat-app/tests/`, `skat-app/src/tests.rs`, `skat-ai` | test (10k), deep (1M) |
-| GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/` | test |
+| GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, every decision and game variant clicked at least once, table elements shown, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/` | test |
 | Manual smoke run | launch the window on each platform and play (see `CONTRIBUTING.md`) | – | per milestone |
 
 New crates follow the same pattern; anything that takes minutes belongs in
