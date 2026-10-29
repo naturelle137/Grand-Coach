@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: EUPL-1.2
 
-//! What one seat knows about the cards (a minimal card counter).
+//! What one seat knows about the cards: the card counter.
+//!
+//! Everything here is exact knowledge derived only from the seat's
+//! [`PlayerView`] (D-23): own cards, played cards, the own discard, revealed
+//! Ouvert cards, and voids proven by failing to follow suit. Heuristic
+//! evidence (bidding) lives in [`crate::evidence`].
 
-use skat_core::{Card, CardSet, GameType, PlayerView, Seat};
+use skat_core::{Card, CardSet, CompletedTrick, GameType, PlayerView, Seat, Trick};
 
 /// Card knowledge of one seat, derived only from its [`PlayerView`] (D-23).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Knowledge {
     /// The viewing seat.
     pub seat: Seat,
     /// The game being played, once announced.
     pub game: Option<GameType>,
+    /// Declarer, once bidding is over.
+    pub declarer: Option<Seat>,
     /// Own cards.
     pub own: CardSet,
     /// Cards played so far, including the trick in progress.
@@ -18,6 +26,15 @@ pub struct Knowledge {
     /// Cards whose place is known without being own or played: the own
     /// discarded Skat and the revealed cards of an Ouvert declarer.
     pub known_elsewhere: CardSet,
+    /// The Skat cards this seat knows: its own discard as declarer.
+    pub skat: Option<CardSet>,
+    /// Cards each seat provably does not hold: the whole follow class
+    /// (Trumpf or a side suit) in which it did not follow suit. Exact.
+    pub voids: [CardSet; 3],
+    /// Number of cards each seat holds.
+    pub hand_sizes: [u8; 3],
+    /// Augen each seat won in completed tricks.
+    pub augen_won: [u8; 3],
 }
 
 impl Knowledge {
@@ -29,12 +46,27 @@ impl Knowledge {
         if view.declarer != Some(view.seat) {
             known_elsewhere |= view.declarer_cards.unwrap_or_default();
         }
+        let game = view.contract.map(|c| c.game);
+        let mut voids = [CardSet::EMPTY; 3];
+        let mut augen_won = [0u8; 3];
+        if let Some(game) = game {
+            for trick in &view.tricks {
+                note_voids(game, &mut voids, completed(trick));
+                augen_won[trick.winner.index()] += trick.augen();
+            }
+            note_voids(game, &mut voids, view.current_trick);
+        }
         Knowledge {
             seat: view.seat,
-            game: view.contract.map(|c| c.game),
+            game,
+            declarer: view.declarer,
             own: view.hand,
             played,
             known_elsewhere,
+            skat: view.own_skat,
+            voids,
+            hand_sizes: view.hand_sizes,
+            augen_won,
         }
     }
 
@@ -59,6 +91,43 @@ impl Knowledge {
         };
         let elsewhere = (CardSet::ALL - self.own - self.played) & game.cards_of(game.follow(card));
         elsewhere.iter().all(|other| !game.beats(other, card, card))
+    }
+
+    /// Augen won so far by the declarer's party (tricks only, without the
+    /// Skat) and by the defenders; `None` before the declarer is known.
+    pub fn party_augen(&self) -> Option<(u8, u8)> {
+        let declarer = self.declarer?;
+        let own = self.augen_won[declarer.index()];
+        let total: u8 = self.augen_won.iter().sum();
+        Some((own, total - own))
+    }
+
+    /// Augen not yet played and not held by this seat (other hands and an
+    /// unknown Skat).
+    pub fn augen_out(&self) -> u8 {
+        (CardSet::ALL - self.own - self.played).augen()
+    }
+}
+
+fn completed(trick: &CompletedTrick) -> Trick {
+    Trick {
+        leader: Some(trick.leader),
+        cards: trick.cards.map(Some),
+    }
+}
+
+/// A seat that did not follow the led class holds no card of it.
+fn note_voids(game: GameType, voids: &mut [CardSet; 3], trick: Trick) {
+    let (Some(leader), Some(led)) = (trick.leader, trick.led()) else {
+        return;
+    };
+    let class = game.follow(led);
+    for (i, card) in trick.cards.iter().enumerate().skip(1) {
+        if let Some(card) = card
+            && game.follow(*card) != class
+        {
+            voids[Seat::from_index(leader.index() + i).index()] |= game.cards_of(class);
+        }
     }
 }
 
@@ -117,9 +186,14 @@ mod tests {
         let mut k = Knowledge {
             seat: Seat::Vorhand,
             game: Some(GameType::Grand),
+            declarer: None,
             own,
             played: CardSet::EMPTY,
             known_elsewhere: CardSet::EMPTY,
+            skat: None,
+            voids: [CardSet::EMPTY; 3],
+            hand_sizes: [10; 3],
+            augen_won: [0; 3],
         };
         assert!(k.is_master(Card::bube(Suit::Kreuz)));
         assert!(!k.is_master(Card::new(Suit::Herz, Rank::Zehn)));

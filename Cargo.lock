@@ -2774,6 +2774,9 @@ dependencies = [
 name = "skat-analysis"
 version = "0.1.0"
 dependencies = [
+ "rand_chacha",
+ "serde",
+ "serde_json",
  "skat-core",
 ]
 

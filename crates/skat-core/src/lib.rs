@@ -25,7 +25,7 @@ mod scoring;
 mod seat;
 mod view;
 
-pub use bidding::{BidRecord, Call, is_reizwert, reizwerte};
+pub use bidding::{BidRecord, Call, is_reizwert, kontra_eligible, reizwerte};
 pub use card::{Card, CardSet, CardSetIter, InvalidCardIndex, Rank, Suit};
 pub use deal::{Deal, DealError};
 pub use game::{Action, CompletedTrick, Event, Game, Phase, RuleConfig, RuleError, Trick};

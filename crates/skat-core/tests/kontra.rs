@@ -332,3 +332,23 @@ fn ouvert_reveals_at_once_without_kontra_round() {
     assert!(g.is_revealed());
     assert_eq!(g.current_seat(), Some(Seat::Vorhand));
 }
+
+#[test]
+fn eligibility_from_public_history_matches_the_game() {
+    let mut g = game(standard_deal(), true);
+    run(&mut g, &MH_AT_20);
+    let history = g.bidding_history();
+    assert!(skat_core::kontra_eligible(history, Seat::Vorhand));
+    assert!(skat_core::kontra_eligible(history, Seat::Hinterhand));
+    let mut g = game(standard_deal(), true);
+    run(&mut g, &VH_AT_18);
+    let history = g.bidding_history();
+    assert!(skat_core::kontra_eligible(history, Seat::Mittelhand));
+    assert!(!skat_core::kontra_eligible(history, Seat::Hinterhand));
+    // An invalid history gives no eligibility.
+    let bogus = [skat_core::BidRecord {
+        seat: Seat::Hinterhand,
+        call: skat_core::Call::Bid(18),
+    }];
+    assert!(!skat_core::kontra_eligible(&bogus, Seat::Hinterhand));
+}

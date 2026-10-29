@@ -26,10 +26,10 @@ All are used unchanged from crates.io; versions are pinned in `Cargo.lock`.
 
 | Crate | Used by | Licence |
 |-------|---------|---------|
-| `rand_chacha`, `rand_core` | `skat-core` (dealing, D-22) | MIT OR Apache-2.0 |
+| `rand_chacha`, `rand_core` | `skat-core` (dealing, D-22), `skat-analysis` (sampling, D-37) | MIT OR Apache-2.0 |
 | `ppv-lite86` | via `rand_chacha` | MIT OR Apache-2.0 |
 | `zerocopy` | via `ppv-lite86` | BSD-2-Clause OR Apache-2.0 OR MIT |
-| `serde`, `serde_core`, `serde_derive` | `skat-core`, optional feature `serde` (D-25) | MIT OR Apache-2.0 |
+| `serde`, `serde_core`, `serde_derive` | `skat-core`, `skat-analysis`, optional feature `serde` (D-25) | MIT OR Apache-2.0 |
 | `proc-macro2`, `quote`, `syn` | via `serde_derive` (build time) | MIT OR Apache-2.0 |
 | `unicode-ident` | via `proc-macro2`, `syn` | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `serde_json`, `itoa`, `zmij` | tests only | MIT OR Apache-2.0 (`zmij`: MIT) |
