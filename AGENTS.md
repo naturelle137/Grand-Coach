@@ -10,6 +10,7 @@ putting yourself in the opponents' shoes.
 
 ## Memory – read first
 - `docs/vision.md`: goals, features, scope, architecture
+- `docs/architecture.md`: design decisions inside `skat-core`
 - `docs/decisions.md`: decision log (D-xx) and open points
 - `docs/roadmap.md`: milestones and current status (update after each milestone)
 - `docs/third-party.md`: origin and licence of third-party files

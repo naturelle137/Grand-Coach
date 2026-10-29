@@ -24,6 +24,13 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-17 | 2026-10-29 | Branching: `main` plus feature branches; changes reach `main` only via pull request. Commit messages follow Conventional Commits. | Simple, sufficient for a small project; readable history. |
 | D-18 | 2026-10-29 | Code of conduct: Contributor Covenant 2.1. | Widely used standard. |
 | D-19 | 2026-10-29 | `AGENTS.md` is the single source of agent instructions; `CLAUDE.md` only imports it (`@AGENTS.md`). | Works for Codex, Claude Code and other agents; no two copies that drift apart. |
+| D-20 | 2026-10-29 | Cards as index `0..32`, card sets as `u32` bitset (`CardSet`). See [architecture.md](architecture.md). | Fast set operations and cheap state clones for Monte Carlo and double-dummy search. |
+| D-21 | 2026-10-29 | `skat-core` is one state machine (`Game` with a `Phase` enum) offering `legal_actions` and `apply`; `apply` validates before mutating, so rejected actions leave the state unchanged. Errors are structured enums without texts. | One type for every position suits simulators and search; no partial updates. |
+| D-22 | 2026-10-29 | A game is described by seed, rule config and action sequence. Dealing is the only randomness in the core and uses `rand_chacha::ChaCha8Rng`. | Reproducible replays and tests; ChaCha8 output stays stable across `rand` versions, unlike `StdRng`. |
+| D-23 | 2026-10-29 | AI and coach receive a `PlayerView` per seat. Full knowledge only through an explicitly named `OmniscientView` (open mode, post-game analysis). | Makes the information-set rule visible and checkable in the type system. |
+| D-24 | 2026-10-29 | Game value, Überreizen and Seeger-Fabian are pure functions over a finished game; series bookkeeping lives outside `skat-core`. | Scoring is testable in isolation from play. |
+| D-25 | 2026-10-29 | Public core data types derive `serde` traits behind the cargo feature `serde`. | Replays and `skat-app` can serialise them; the core stays lean without it. |
+| D-26 | 2026-10-29 | Clarifies D-03: rear-hand exception and Kontra/Re timing as encoded in the engine. Details below the table. | Issue #5 requires D-03 to be precise enough to implement and test. |
 
 ### D-03 Kontra/Re in detail
 
@@ -42,6 +49,20 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
    including Hand games. In open games the announcements must be settled
    before the cards are revealed. Unlike some pub rule profiles, Re is also
    allowed in Null and Null Hand.
+
+### D-26 Kontra/Re clarified
+
+1. **Eligibility:** a defender may say Kontra if they bid or held at least 18.
+   Rear hand (Hinterhand) may also say Kontra if, at its first turn in the
+   bidding, the standing bid was already above 18 and it passed.
+2. **Timing:** an eligible defender may say Kontra instead of playing a card
+   while it is their turn and they have not played a card yet. Only one Kontra
+   per game.
+3. **Re:** immediately after Kontra the declarer decides Re or no Re before
+   anything else happens; then play continues.
+4. **Ouvert:** before the declarer's cards are revealed, each eligible
+   defender decides once whether to say Kontra, followed by the declarer's Re
+   decision if needed.
 
 ## Open points
 
