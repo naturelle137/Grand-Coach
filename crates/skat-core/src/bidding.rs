@@ -177,6 +177,43 @@ impl Bidding {
         }
     }
 
+    /// Rebuilds the bidding from a call history, checking every call against
+    /// the bidding rules. `None` if a call is out of turn or not allowed.
+    #[cfg(feature = "serde")]
+    pub(crate) fn replay(history: &[BidRecord]) -> Option<(Bidding, BidOutcome)> {
+        let mut bidding = Bidding::new();
+        let mut outcome = BidOutcome::Continue;
+        for record in history {
+            if !matches!(outcome, BidOutcome::Continue) || record.seat != bidding.current_seat() {
+                return None;
+            }
+            outcome = match record.call {
+                Call::Bid(value) => {
+                    let alone = bidding.stage == Stage::VorhandAlone;
+                    let allowed = is_reizwert(value)
+                        && value > bidding.bid
+                        && !bidding.awaiting_holder
+                        && (!alone || value == 18);
+                    if !allowed {
+                        return None;
+                    }
+                    bidding.bid(value)
+                }
+                Call::Hold(value) => {
+                    let allowed = bidding.awaiting_holder
+                        && bidding.stage != Stage::VorhandAlone
+                        && value == bidding.bid;
+                    if !allowed {
+                        return None;
+                    }
+                    bidding.hold()
+                }
+                Call::Pass => bidding.pass(),
+            };
+        }
+        Some((bidding, outcome))
+    }
+
     /// Kontra eligibility per D-26.1.
     pub(crate) fn kontra_eligible(&self, seat: Seat) -> bool {
         self.bid_or_held[seat.index()]

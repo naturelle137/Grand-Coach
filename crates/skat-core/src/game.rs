@@ -283,10 +283,18 @@ enum Step {
     AwaitRe,
 }
 
+#[cfg(feature = "serde")]
+mod wire;
+
 /// Full state of one game. Holds everything, including hidden cards; hand it
-/// to AI or coach only through [`Game::view`] (D-23).
+/// to AI or coach only through [`Game::view`] (D-23). Deserialising rejects
+/// states that no sequence of actions can reach.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "wire::GameData")
+)]
 pub struct Game {
     pub(crate) config: RuleConfig,
     pub(crate) deal: Deal,
@@ -746,6 +754,14 @@ impl Game {
     }
 
     fn finish(&mut self, events: &mut Vec<Event>) {
+        let result = settle(&self.game_outcome());
+        self.result = Some(result);
+        self.phase = Phase::Beendet;
+        events.push(Event::GameFinished { result });
+    }
+
+    /// The facts the settlement is computed from.
+    pub(crate) fn game_outcome(&self) -> GameOutcome {
         let declarer = self.declarer_seat();
         let contract = self.contract.expect("contract is set during play");
         let won: Vec<&CompletedTrick> = self
@@ -753,7 +769,7 @@ impl Game {
             .iter()
             .filter(|t| t.winner == declarer)
             .collect();
-        let outcome = GameOutcome {
+        GameOutcome {
             declarer,
             contract,
             bid: self.bid,
@@ -762,10 +778,6 @@ impl Game {
             declarer_tricks: won.len() as u8,
             tricks_played: self.tricks.len() as u8,
             kontra: self.kontra,
-        };
-        let result = settle(&outcome);
-        self.result = Some(result);
-        self.phase = Phase::Beendet;
-        events.push(Event::GameFinished { result });
+        }
     }
 }

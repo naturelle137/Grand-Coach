@@ -10,7 +10,11 @@ use crate::seat::Seat;
 
 /// Hands of the three seats and the Skat before bidding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "DealData")
+)]
 pub struct Deal {
     hands: [CardSet; 3],
     skat: CardSet,
@@ -26,6 +30,35 @@ pub enum DealError {
     SkatSize,
     /// Hands and Skat overlap, so they do not form the full deck.
     Overlap,
+}
+
+impl core::fmt::Display for DealError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            DealError::HandSize(seat) => write!(f, "hand of {seat:?} does not have ten cards"),
+            DealError::SkatSize => write!(f, "the Skat does not have two cards"),
+            DealError::Overlap => write!(f, "hands and Skat do not form the 32 cards"),
+        }
+    }
+}
+
+impl core::error::Error for DealError {}
+
+/// Unvalidated wire form of [`Deal`]; deserialising goes through [`Deal::new`].
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct DealData {
+    hands: [CardSet; 3],
+    skat: CardSet,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<DealData> for Deal {
+    type Error = DealError;
+
+    fn try_from(data: DealData) -> Result<Deal, DealError> {
+        Deal::new(data.hands, data.skat)
+    }
 }
 
 impl Deal {
