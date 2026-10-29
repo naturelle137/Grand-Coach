@@ -1,0 +1,25 @@
+Grand-Coach – Lizenz für Grafiken, Dokumentation und sonstige Inhalte
+=====================================================================
+
+Copyright (c) 2026 naturelle137 und Mitwirkende
+
+Sofern in der jeweiligen Datei oder in docs/third-party.md nichts anderes
+angegeben ist, stehen die folgenden Inhalte unter der Lizenz
+Creative Commons Namensnennung – Weitergabe unter gleichen Bedingungen 4.0
+International (CC BY-SA 4.0):
+
+  - assets/   Grafiken (Kartenbilder, Icons, Schriften-Derivate), Sounds,
+              Übersetzungs- und Coach-Textdateien
+  - docs/     Dokumentation
+  - README.md, CLAUDE.md und sonstige Texte ohne Programmcode
+
+Lizenztext:  https://creativecommons.org/licenses/by-sa/4.0/legalcode.de
+Kurzfassung: https://creativecommons.org/licenses/by-sa/4.0/deed.de
+SPDX-Kennung: CC-BY-SA-4.0
+
+Der Programmcode (u. a. crates/, tools/, Build-Skripte) steht unter der
+EUPL-1.2, siehe LICENSE. Werden Grafiken per Skript erzeugt, gilt für das
+Skript die EUPL-1.2 und für die erzeugten Dateien CC BY-SA 4.0.
+
+Fremde Inhalte behalten ihre eigene Lizenz. Herkunft und Lizenz jeder
+fremden Datei stehen in docs/third-party.md.
