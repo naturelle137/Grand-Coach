@@ -28,6 +28,12 @@ button-cancel = Abbrechen
 
 ## Opponents
 
+mode-levels = Gegner einzeln wählen
+level-rookie = Grünschnabel
+level-rookie-description = Grünschnabel: kennt die Regeln nur teilweise und vertut sich gelegentlich beim Reizen, bei der Spielwahl, beim Drücken und beim Ausspielen.
+mode-goldfish = Goldfisch
+mode-goldfish-description = Goldfisch: Ein zufällig bestimmter Gegner spielt stark, vergisst aber, welche Karten schon gefallen sind; der andere spielt auf Mittel.
+mode-mephisto = Mephisto
 opponent-left = Gegner links:
 opponent-right = Gegner rechts:
 level-easy = Leicht
@@ -47,6 +53,7 @@ status-bid = Reizwert: { $value }
 status-declarer = Alleinspieler: { $player }
 status-seed = Seed { $seed }
 status-levels = Gegner: { $left } (links), { $right } (rechts)
+status-opponents = Gegner: { $mode }
 status-waiting = { $player } überlegt …
 
 ## Players and seats

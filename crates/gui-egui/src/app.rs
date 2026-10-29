@@ -8,8 +8,8 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use skat_app::{
     Action, Announcement, AppError, AppEvent, Cancel, Card, CardSet, Command, Event, GameType,
-    Level, OpponentMove, Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit,
-    TableView, reizwerte,
+    Level, OpponentMove, Opponents, Phase, PlayedCard, PlayerId, SeriesLength, Session,
+    SessionConfig, Suit, TableView, reizwerte,
 };
 
 use crate::cards::{self, Deck};
@@ -26,8 +26,17 @@ struct NewSeries {
     free: bool,
     games: u16,
     kontra_re: bool,
-    opponents: [Level; 2],
+    mode: Mode,
+    levels: [Level; 2],
     seed: String,
+}
+
+/// Opponent choice in the "new series" dialog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Levels,
+    Goldfish,
+    Mephisto,
 }
 
 /// An opponent decision computed on a background thread. Dropping it
@@ -250,7 +259,15 @@ impl GrandCoachApp {
             free,
             games,
             kontra_re: config.kontra_re,
-            opponents: config.opponents,
+            mode: match config.opponents {
+                Opponents::Levels(_) => Mode::Levels,
+                Opponents::Goldfish => Mode::Goldfish,
+                Opponents::Mephisto => Mode::Mephisto,
+            },
+            levels: match config.opponents {
+                Opponents::Levels(levels) => levels,
+                _ => [Level::Medium; 2],
+            },
             seed: config.seed.wrapping_add(1).to_string(),
         });
     }
@@ -308,13 +325,21 @@ impl GrandCoachApp {
                 );
             }
             ui.separator();
-            ui.label(i.tf(
-                "status-levels",
-                &[
-                    ("left", i.t(level_message(view.config.opponents[0])).into()),
-                    ("right", i.t(level_message(view.config.opponents[1])).into()),
-                ],
-            ));
+            ui.label(match view.config.opponents {
+                Opponents::Levels([left, right]) => i.tf(
+                    "status-levels",
+                    &[
+                        ("left", i.t(level_message(left)).into()),
+                        ("right", i.t(level_message(right)).into()),
+                    ],
+                ),
+                Opponents::Goldfish => {
+                    i.tf("status-opponents", &[("mode", i.t("mode-goldfish").into())])
+                }
+                Opponents::Mephisto => {
+                    i.tf("status-opponents", &[("mode", i.t("mode-mephisto").into())])
+                }
+            });
             ui.separator();
             ui.label(i.tf(
                 "status-seed",
@@ -734,8 +759,8 @@ impl GrandCoachApp {
             for &card in &view.hand {
                 let selected = self.selected.contains(card);
                 let dim = playing && !playable.contains(&card);
-                let mut image = egui::Image::new(cards::image(&cards::face_path(self.deck, card)))
-                    .fit_to_exact_size(CARD);
+                let mut image =
+                    egui::Image::new(cards::image(&self.face(card))).fit_to_exact_size(CARD);
                 if dim {
                     image = image.tint(Color32::from_gray(150));
                 }
@@ -770,13 +795,17 @@ impl GrandCoachApp {
         }
     }
 
+    /// Face of `card` in the chosen deck (path below `assets/cards/`); the
+    /// Mephisto variant while the session plays against Mephisto.
+    pub fn face(&self, card: Card) -> String {
+        let mephisto = self.session.config().opponents == Opponents::Mephisto;
+        cards::face_path(self.deck, card, mephisto)
+    }
+
     fn card_image(&self, ui: &mut egui::Ui, card: Card, size: Vec2) {
         let label = text::card(&self.i18n, card);
-        ui.add(
-            egui::Image::new(cards::image(&cards::face_path(self.deck, card)))
-                .fit_to_exact_size(size),
-        )
-        .on_hover_text(label);
+        ui.add(egui::Image::new(cards::image(&self.face(card))).fit_to_exact_size(size))
+            .on_hover_text(label);
     }
 
     // ----------------------------------------------------------------------
@@ -802,27 +831,35 @@ impl GrandCoachApp {
                 ui.radio_value(&mut draft.free, true, self.t("series-free"));
                 ui.checkbox(&mut draft.kontra_re, self.t("option-kontra-re"));
                 ui.separator();
+                ui.radio_value(&mut draft.mode, Mode::Levels, self.t("mode-levels"));
                 for (k, id) in ["opponent-left", "opponent-right"].into_iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.label(self.t(id));
-                        for level in Level::ALL {
-                            let label = self.t(level_message(level));
-                            ui.radio_value(&mut draft.opponents[k], level, label)
-                                .on_hover_text(self.t(level_description(level)));
-                        }
+                    ui.add_enabled_ui(draft.mode == Mode::Levels, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(self.t(id));
+                            for level in Level::ALL {
+                                let label = self.t(level_message(level));
+                                ui.radio_value(&mut draft.levels[k], level, label)
+                                    .on_hover_text(self.t(level_description(level)));
+                            }
+                        });
                     });
                 }
-                ui.label(
-                    RichText::new(self.t(level_description(draft.opponents[0])))
-                        .small()
-                        .weak(),
-                );
-                if draft.opponents[1] != draft.opponents[0] {
-                    ui.label(
-                        RichText::new(self.t(level_description(draft.opponents[1])))
-                            .small()
-                            .weak(),
-                    );
+                ui.radio_value(&mut draft.mode, Mode::Goldfish, self.t("mode-goldfish"))
+                    .on_hover_text(self.t("mode-goldfish-description"));
+                ui.radio_value(&mut draft.mode, Mode::Mephisto, self.t("mode-mephisto"));
+                let mut notes = Vec::new();
+                match draft.mode {
+                    Mode::Levels => {
+                        notes.push(level_description(draft.levels[0]));
+                        if draft.levels[1] != draft.levels[0] {
+                            notes.push(level_description(draft.levels[1]));
+                        }
+                    }
+                    Mode::Goldfish => notes.push("mode-goldfish-description"),
+                    Mode::Mephisto => {}
+                }
+                for note in notes {
+                    ui.label(RichText::new(self.t(note)).small().weak());
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -850,7 +887,11 @@ impl GrandCoachApp {
                     SeriesLength::Fixed(draft.games)
                 },
                 kontra_re: draft.kontra_re,
-                opponents: draft.opponents,
+                opponents: match draft.mode {
+                    Mode::Levels => Opponents::Levels(draft.levels),
+                    Mode::Goldfish => Opponents::Goldfish,
+                    Mode::Mephisto => Opponents::Mephisto,
+                },
             });
             self.thinking = None;
             self.ready = None;
@@ -869,6 +910,7 @@ impl GrandCoachApp {
 /// Message id of a strength level's name.
 fn level_message(level: Level) -> &'static str {
     match level {
+        Level::Rookie => "level-rookie",
         Level::Easy => "level-easy",
         Level::Medium => "level-medium",
         Level::Strong => "level-strong",
@@ -878,6 +920,7 @@ fn level_message(level: Level) -> &'static str {
 /// Message id of a strength level's description.
 fn level_description(level: Level) -> &'static str {
     match level {
+        Level::Rookie => "level-rookie-description",
         Level::Easy => "level-easy-description",
         Level::Medium => "level-medium-description",
         Level::Strong => "level-strong-description",

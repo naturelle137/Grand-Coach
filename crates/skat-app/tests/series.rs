@@ -9,8 +9,8 @@ use std::collections::BTreeSet;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::{
-    Action, AppError, AppEvent, Cancel, Command, GameType, KontraLevel, Level, Phase, PlayerId,
-    RuleError, SeriesLength, Session, SessionConfig,
+    Action, AppError, AppEvent, Cancel, Command, GameType, KontraLevel, Level, Opponents, Phase,
+    PlayerId, RuleError, SeriesLength, Session, SessionConfig,
 };
 
 fn config(seed: u64, series: SeriesLength, kontra_re: bool) -> SessionConfig {
@@ -18,7 +18,7 @@ fn config(seed: u64, series: SeriesLength, kontra_re: bool) -> SessionConfig {
         seed,
         series,
         kontra_re,
-        opponents: [Level::Easy; 2],
+        opponents: Opponents::Levels([Level::Easy; 2]),
     }
 }
 
@@ -375,7 +375,7 @@ fn api_types_round_trip_as_json() {
     let json = serde_json::to_string(&error).unwrap();
     assert_eq!(serde_json::from_str::<AppError>(&json).unwrap(), error);
     let config = SessionConfig {
-        opponents: [Level::Strong, Level::Easy],
+        opponents: Opponents::Levels([Level::Strong, Level::Easy]),
         ..config(3, SeriesLength::Free, true)
     };
     let json = serde_json::to_string(&config).unwrap();
@@ -388,7 +388,7 @@ fn api_types_round_trip_as_json() {
 #[test]
 fn each_opponent_has_its_own_level() {
     let config = SessionConfig {
-        opponents: [Level::Easy, Level::Strong],
+        opponents: Opponents::Levels([Level::Easy, Level::Strong]),
         ..config(4, SeriesLength::Fixed(1), false)
     };
     assert_eq!(config.level(PlayerId::HUMAN), None);
@@ -397,13 +397,18 @@ fn each_opponent_has_its_own_level() {
     let session = Session::new(config);
     assert_eq!(
         session.view().config.opponents,
-        [Level::Easy, Level::Strong]
+        Opponents::Levels([Level::Easy, Level::Strong])
     );
+    assert_eq!(session.goldfish(), None);
     // Human is Vorhand in game 1: player 1 (Mittelhand) bids first.
     let job = session.opponent_job().expect("opponent to move");
     assert_eq!(job.player(), PlayerId(1));
-    assert_eq!(job.level(), Level::Easy);
-    assert_eq!(SessionConfig::default().opponents, [Level::Medium; 2]);
+    assert_eq!(job.level(), Some(Level::Easy));
+    assert!(!job.sees_all_cards());
+    assert_eq!(
+        SessionConfig::default().opponents,
+        Opponents::Levels([Level::Medium; 2])
+    );
 }
 
 /// Background moves: the same move as `AdvanceOpponent`; a move computed
@@ -412,7 +417,7 @@ fn each_opponent_has_its_own_level() {
 fn opponent_jobs_match_advance_and_reject_stale_moves() {
     for seed in 0..3 {
         let config = SessionConfig {
-            opponents: [Level::Medium, Level::Easy],
+            opponents: Opponents::Levels([Level::Medium, Level::Easy]),
             ..config(seed, SeriesLength::Fixed(2), true)
         };
         let mut a = Session::new(config);
@@ -446,7 +451,7 @@ fn opponent_jobs_match_advance_and_reject_stale_moves() {
 #[test]
 fn cancelled_opponents_still_play_legally() {
     let config = SessionConfig {
-        opponents: [Level::Strong, Level::Strong],
+        opponents: Opponents::Levels([Level::Strong, Level::Strong]),
         ..config(6, SeriesLength::Fixed(2), true)
     };
     let mut session = Session::new(config);
@@ -504,4 +509,92 @@ fn human_decides_kontra_before_an_opponents_ouvert_game() {
         }
     }
     panic!("no Ouvert Kontra round for the human found");
+}
+
+/// Goldfish mode: one opponent per series is the Goldfish, drawn from the
+/// opponents' seed stream; nobody sees foreign cards.
+#[test]
+fn goldfish_mode_draws_one_forgetful_opponent() {
+    let mut drawn = BTreeSet::new();
+    for seed in 0..12 {
+        let config = SessionConfig {
+            opponents: Opponents::Goldfish,
+            ..config(seed, SeriesLength::Fixed(1), true)
+        };
+        let session = Session::new(config);
+        let goldfish = session.goldfish().expect("Goldfish mode");
+        assert!(goldfish == PlayerId(1) || goldfish == PlayerId(2));
+        assert_eq!(Session::new(config).goldfish(), Some(goldfish));
+        assert_eq!(config.level(PlayerId(1)), None);
+        drawn.insert(goldfish);
+    }
+    assert_eq!(drawn.len(), 2);
+    let config = SessionConfig {
+        opponents: Opponents::Goldfish,
+        ..config(2, SeriesLength::Fixed(1), true)
+    };
+    let mut session = Session::new(config);
+    let mut rng = ChaCha8Rng::seed_from_u64(2);
+    while !session.view().series_finished {
+        if let Some(job) = session.opponent_job() {
+            assert!(!job.sees_all_cards());
+            assert_eq!(job.level(), None);
+            session.finish_opponent(job.run(None)).unwrap();
+        } else {
+            let command = human_command(&session, &mut rng);
+            session.execute(command).unwrap();
+        }
+    }
+    assert_eq!(session.view().sheet.records.len(), 1);
+}
+
+/// Mephisto mode: every computer decision before card play sees all
+/// cards; in card play the computer declarer does and its partner does
+/// not, and against the human declarer both defenders do.
+#[test]
+fn mephisto_mode_sees_all_cards_where_configured() {
+    let mut cases = BTreeSet::new();
+    for seed in 0..40 {
+        if cases.len() == 3 {
+            break;
+        }
+        let config = SessionConfig {
+            opponents: Opponents::Mephisto,
+            ..config(seed, SeriesLength::Fixed(1), true)
+        };
+        let mut session = Session::new(config);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        while !session.view().series_finished {
+            let Some(job) = session.opponent_job() else {
+                let command = human_command(&session, &mut rng);
+                session.execute(command).unwrap();
+                continue;
+            };
+            let view = session.view();
+            let expected = match (view.phase, view.declarer) {
+                (Phase::Spiel, Some(PlayerId::HUMAN)) => {
+                    cases.insert("against the human");
+                    true
+                }
+                (Phase::Spiel, Some(declarer)) if declarer == job.player() => {
+                    cases.insert("declarer");
+                    true
+                }
+                (Phase::Spiel, _) => {
+                    cases.insert("partner");
+                    false
+                }
+                _ => true,
+            };
+            assert_eq!(job.sees_all_cards(), expected, "seed {seed}");
+            session.finish_opponent(job.run(None)).unwrap();
+        }
+        let record = session.view().sheet.records[0];
+        if let (Some(declarer), Some(result)) = (record.declarer, record.result)
+            && !declarer.is_human()
+        {
+            assert!(result.won, "seed {seed}: Mephisto lost {record:?}");
+        }
+    }
+    assert_eq!(cases.len(), 3, "{cases:?}");
 }

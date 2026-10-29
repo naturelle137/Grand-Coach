@@ -46,10 +46,12 @@ const RANKS: [&str; 8] = [
     "sieben", "acht", "neun", "zehn", "bube", "dame", "koenig", "ass",
 ];
 
-/// Path of a card face below `assets/cards/`.
-pub fn face_path(deck: Deck, card: Card) -> String {
+/// Path of a card face below `assets/cards/`; `mephisto` selects the
+/// Mephisto variant of the deck (D-41).
+pub fn face_path(deck: Deck, card: Card, mephisto: bool) -> String {
     format!(
-        "{}/{}-{}.svg",
+        "{}{}/{}-{}.svg",
+        if mephisto { "mephisto/" } else { "" },
         deck.dir(),
         SUITS[usize::from(card.suit().index())],
         RANKS[usize::from(card.rank().index())]

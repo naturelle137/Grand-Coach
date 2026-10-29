@@ -28,6 +28,12 @@ button-cancel = Cancel
 
 ## Opponents
 
+mode-levels = Choose each opponent
+level-rookie = Rookie
+level-rookie-description = Rookie: knows the rules only in part and now and then misjudges the bidding, the game choice, the discard or a card.
+mode-goldfish = Goldfish
+mode-goldfish-description = Goldfish: one opponent, chosen at random, plays strong but forgets which cards have been played; the other plays Medium.
+mode-mephisto = Mephisto
 opponent-left = Left opponent:
 opponent-right = Right opponent:
 level-easy = Easy
@@ -47,6 +53,7 @@ status-bid = Bid: { $value }
 status-declarer = Declarer: { $player }
 status-seed = Seed { $seed }
 status-levels = Opponents: { $left } (left), { $right } (right)
+status-opponents = Opponents: { $mode }
 status-waiting = { $player } is thinking …
 
 ## Players and seats
