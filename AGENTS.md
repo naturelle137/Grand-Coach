@@ -95,8 +95,12 @@ There is no executable or GUI target yet.
 - In local sessions: once changes pass all checks under "Build and test",
   commit them (Conventional Commits) and push the feature branch. Never
   commit failing changes, never push to `main`.
-- In CI via `.github/workflows/implement-issue.yml` (D-27): follow the
-  workflow prompt; do not push or open the PR yourself.
+- To implement an issue, follow the skill
+  `.claude/skills/implement-issue/SKILL.md` (D-29). Tick an issue's
+  checklist items only when they are done and verified.
+- In CI via `.github/workflows/implement-issue.yml` (D-27): the workflow
+  runs that skill; follow its CI notes and do not push, open the PR or edit
+  the issue yourself.
 - Every source file starts with the SPDX header:
   ```rust
   // SPDX-License-Identifier: EUPL-1.2

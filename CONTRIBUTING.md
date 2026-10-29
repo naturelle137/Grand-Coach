@@ -85,7 +85,10 @@ Maintainers can let Claude implement a single issue (D-27): Actions →
 "Implement issue" → enter the issue number, or
 `gh workflow run implement-issue.yml -f issue=<n>`. Claude works on the
 branch `claude/issue-<n>` and opens a regular PR to `main`, which is reviewed
-like any other PR. Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
+like any other PR. The procedure is the skill
+`.claude/skills/implement-issue/SKILL.md`; the workflow ticks the issue's
+checklist items the agent verified as done and accepts no other change to
+the issue text (D-29). Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
 (created with `claude setup-token`).
 
 ## Licences
