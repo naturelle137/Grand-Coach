@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: EUPL-1.2
+name: Bug report
+description: Something does not work as expected (wrong rule, crash, display error).
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: After a Grand Hand game the score was 72, but it should be 96.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: How can we see it ourselves? A game seed or save helps a lot if you have one.
+      placeholder: |
+        1. Start a new game with seed ...
+        2. Bid up to ...
+        3. ...
+
+  - type: input
+    id: environment
+    attributes:
+      label: Version and system
+      placeholder: Grand-Coach 0.1.0, Windows 11
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, logs, ISkO rule reference, ...

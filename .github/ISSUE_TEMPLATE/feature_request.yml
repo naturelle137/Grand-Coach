@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: EUPL-1.2
+name: Feature request
+description: Suggest a new feature or an improvement.
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing?
+      description: What would you like to do, and why?
+      placeholder: As a player I want the coach to ... so that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How could it work? Rough ideas are fine.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Alternatives, examples from other Skat apps, sketches, ...
