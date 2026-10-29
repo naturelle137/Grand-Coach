@@ -75,7 +75,7 @@ the opponents' shoes**.
 
 ## Architecture (guideline)
 
-```
+```text
 skat-core      rule engine: pure, deterministic (seed), no GUI/IO
    ↓
 skat-analysis  card counter / knowledge state, opponent model (distributions
