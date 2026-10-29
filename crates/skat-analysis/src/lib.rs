@@ -3,14 +3,32 @@
 //! Shared analysis for opponents and coach (architecture: "coach and AI do
 //! not compute separately").
 //!
-//! M2 only needs the baseline: what one seat knows from its
-//! [`PlayerView`](skat_core::PlayerView) ([`Knowledge`]), the state of the
-//! trick in progress ([`TrickState`]) and simple hand measures ([`hand`]).
-//! Strategic evaluation (Monte Carlo, double-dummy) follows in M3.
+//! - card counting: what one seat knows from its
+//!   [`PlayerView`](skat_core::PlayerView) ([`Knowledge`]) and the trick in
+//!   progress ([`TrickState`]),
+//! - opponent model: hidden-card distributions under hard constraints
+//!   ([`sampling`]) weighted by bidding evidence ([`evidence`]),
+//! - option evaluation for every decision ([`analyze`]): Monte Carlo over
+//!   those distributions, double-dummy card play ([`double_dummy`]) and a
+//!   shared continuation policy ([`policy`]), within a deterministic
+//!   [`Budget`],
+//! - simple hand measures ([`hand`]).
+//!
+//! Semantics, budgets and measured latency: `docs/analysis.md`.
 
+mod analysis;
+mod budget;
+pub mod double_dummy;
+pub mod evidence;
 pub mod hand;
 mod knowledge;
+pub mod policy;
+pub mod sampling;
 mod trick;
 
+pub use analysis::{
+    Analysis, Assumption, Effort, Estimate, Observation, OptionValue, Status, analyze,
+};
+pub use budget::{Budget, Cancel, Interrupted, Meter};
 pub use knowledge::Knowledge;
 pub use trick::TrickState;

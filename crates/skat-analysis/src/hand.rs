@@ -59,6 +59,14 @@ pub fn strength(game: GameType, cards: CardSet) -> i32 {
     score
 }
 
+/// Number of cards of the same follow class that `card` beats when led.
+pub fn power(game: GameType, card: Card) -> i32 {
+    game.cards_of(game.follow(card))
+        .iter()
+        .filter(|&other| game.beats(card, other, card))
+        .count() as i32
+}
+
 /// Number of suits in which the declarer of a Null game could be forced to
 /// take a trick: a suit is safe if its k-th lowest card (from 0) is at most
 /// the 2k-th card in Null order 7, 8, 9, 10, J, Q, K, A.
