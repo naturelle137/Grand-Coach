@@ -25,7 +25,8 @@ Details: [docs/vision.md](docs/vision.md).
 
 ### Status
 
-Projektgrundlage, noch kein Code. Fortschritt: [docs/roadmap.md](docs/roadmap.md).
+Die Regel-Engine (`crates/skat-core`) ist fertig; noch nicht spielbar.
+Fortschritt: [docs/roadmap.md](docs/roadmap.md).
 
 ### Systemvoraussetzungen
 
@@ -37,9 +38,14 @@ Projektgrundlage, noch kein Code. Fortschritt: [docs/roadmap.md](docs/roadmap.md
 
 ### Aus dem Quellcode bauen
 
-*Noch offen.* Das Projekt wird in Rust geschrieben (siehe
-[docs/decisions.md](docs/decisions.md)); die Build-Anleitung folgt mit dem
-ersten Code.
+Benötigt Rust (stable, ab 1.88). Im Wurzelverzeichnis:
+
+```sh
+cargo build
+cargo test
+```
+
+Weitere Prüfungen stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Benutzung
 
@@ -82,7 +88,8 @@ Details: [docs/vision.md](docs/vision.md).
 
 ### Status
 
-Project foundation, no code yet. Progress: [docs/roadmap.md](docs/roadmap.md).
+The rule engine (`crates/skat-core`) is done; not playable yet.
+Progress: [docs/roadmap.md](docs/roadmap.md).
 
 ### Requirements
 
@@ -94,9 +101,14 @@ Project foundation, no code yet. Progress: [docs/roadmap.md](docs/roadmap.md).
 
 ### Building from source
 
-*To be defined.* The project will be written in Rust (see
-[docs/decisions.md](docs/decisions.md)); build instructions follow with the
-first code.
+Requires Rust (stable, 1.88 or later). From the repository root:
+
+```sh
+cargo build
+cargo test
+```
+
+Further checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Usage
 

@@ -31,7 +31,7 @@ Keep all documents short.
 Rust (Cargo workspace), GUI with egui. Later additionally Godot via
 godot-rust/gdext (D-11).
 
-## Architecture (planned crates)
+## Architecture (crates; only `skat-core` exists so far)
 ```
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI
 crates/skat-analysis  card counter, opponent model, option evaluation (Monte Carlo, double-dummy)
@@ -61,11 +61,20 @@ Translations live in `assets/i18n/`.
   no Bock.
 
 ## Build and test
-The repository currently contains documentation only; there is no Cargo
-workspace yet. Do not invent or claim build, test or lint commands until they
-exist; once they do, document the verified commands here and in
-`CONTRIBUTING.md`. For documentation changes, run `git diff --check` and check
-relative links.
+Verified commands (Rust stable, Cargo workspace at the repository root):
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo test --all-features   # includes the serde round-trip tests
+```
+
+`cargo test` includes 10,000 seeded random games
+(`crates/skat-core/tests/random_games.rs`). For documentation changes, run
+`git diff --check` and check relative links.
+Document new commands here and in `CONTRIBUTING.md` only once verified.
 
 ## Testing
 - Rule engine and analysis are test-driven; rule cases get unit tests with

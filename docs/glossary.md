@@ -7,6 +7,7 @@ Skat terms stay German in identifiers and texts (D-16).
 |--------|---------|
 | Skat | the two face-down cards; also the game itself |
 | Reizen / Reizwert | bidding / bid value |
+| Grundwert / Spielwert | base value / game value |
 | Sagen / Hören (Halten) / Passen | bid / hold / pass |
 | Vorhand / Mittelhand / Hinterhand | fore hand / middle hand / rear hand |
 | Geber | dealer |

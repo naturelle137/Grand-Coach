@@ -32,6 +32,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-25 | 2026-10-29 | Public core data types derive `serde` traits behind the cargo feature `serde`. | Replays and `skat-app` can serialise them; the core stays lean without it. |
 | D-26 | 2026-10-29 | Clarifies D-03: rear-hand exception and Kontra/Re timing as encoded in the engine. Details below the table. | Issue #5 requires D-03 to be precise enough to implement and test. |
 | D-27 | 2026-10-29 | Claude may implement issues through the manually triggered workflow `implement-issue.yml`. The maintainer picks the issue; the result is a regular PR to `main` that a human reviews. No scheduled runs, no automatic issue selection, no automated review bots. Auth via the subscription OAuth token. | Offloads well-specified issues while keeping human review and D-17. |
+| D-28 | 2026-10-29 | Rule interpretations encoded in `skat-core` for M1, with the ISkO sources used. Details below the table. | Issue #5 requires ambiguities to be resolved and documented rather than invented silently. |
 
 ### D-03 Kontra/Re in detail
 
@@ -65,9 +66,45 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
    defender decides once whether to say Kontra, followed by the declarer's Re
    decision if needed.
 
+### D-28 Rule interpretations in `skat-core`
+
+Sources: the Internationale Skatordnung (ISkO), Altenburg 2002 edition
+(PDF: <https://www.spielkarten.com/wp-content/uploads/2019/07/0_Skat_InternationaleSkatordnung.pdf>),
+read through its English translation
+(<https://www.weddslist.com/skat/ordnung/skatordnung3.html>). Section numbers
+below refer to the ISkO.
+
+1. **Bidding:** bids must be values from the Reizwert table (5.6.1); jumps
+   are allowed. If Mittelhand and Hinterhand pass without a bid, Vorhand
+   either plays at 18 (`Bid(18)`, no other value) or passes (3.3.6); three
+   passes throw the hand in (3.3.7, D-04).
+2. **Null below the bid:** a Null game whose fixed value is below the bid
+   cannot be announced; the declarer must announce a suit or Grand game
+   instead (3.4.4). The engine rejects it with `NullValueBelowBid`.
+3. **Lost and overbid games:** every lost game counts double (5.3.4). An
+   overbid game is lost with the smallest multiple of its base value that
+   reaches the bid, then doubled (5.4.1, 5.4.2).
+4. **Levels:** announced Schneider/Schwarz always count their levels.
+   Schneider (either party at 30 Augen or fewer) and Schwarz (either party
+   without a trick) count when reached. A declarer who announced Schneider
+   is played Schneider gets no extra level (5.2.5).
+5. **End of play:** suit and Grand games are played to the tenth trick;
+   Null ends as soon as the declarer takes a trick. Conceding and shortening
+   (4.3) are not modelled in M1.
+6. **Ouvert Kontra round (D-26.4):** eligible defenders decide in seat order
+   Vorhand, Mittelhand, Hinterhand; after a Kontra the round ends with the
+   declarer's Re decision. In Ouvert play no Kontra is possible later.
+7. **Seats and scoring:** `skat-core` uses per-deal seats (Vorhand,
+   Mittelhand, Hinterhand = dealer). Seeger-Fabian contributions are returned
+   per seat; mapping seats to players belongs to the series layer.
+8. **Dealing:** Fisher–Yates shuffle with rejection sampling on the
+   `ChaCha8Rng` stream (seeded with `seed_from_u64`), dealt 3 – Skat 2 – 4 – 3
+   from Vorhand, so a seed always gives the same deal.
+
 ## Open points
 
 - i18n library (candidate: Fluent / `fluent-rs`) and SVG rendering
   (candidate: `resvg`, or pre-rasterised PNGs) to be chosen when coding
   starts.
 - Calibrate "strength level ↔ parameters" empirically (AI vs. AI).
+- Conceding a game (ISkO 4.3) is not yet modelled in `skat-core` (D-28.5).

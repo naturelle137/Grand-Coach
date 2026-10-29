@@ -1,6 +1,7 @@
 # Roadmap
 
-**Current status:** M0 done. Next: M1 (rule engine).
+**Current status:** M1 done (`crates/skat-core`, issue #5). Next: M2 (first
+playable version).
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
@@ -10,7 +11,7 @@ No individual tasks here.
   Done when vision, decision log, CLAUDE.md, licences and contributor docs are
   in the repository.
 
-- [ ] **M1 – Rule engine (`skat-core`)**
+- [x] **M1 – Rule engine (`skat-core`)**
   Done when the engine fully covers all ISkO games (bidding, Hand, Skat,
   discarding, suit, Grand, Null and Ouvert, Schneider/Schwarz, game value
   including overbidding, Seeger-Fabian) plus Kontra/Re per D-03, and thousands

@@ -18,7 +18,20 @@ Skat terms stay German; see the [glossary](docs/glossary.md).
 
 ## Development setup
 
-*To be defined once there is code.*
+Install Rust stable (minimum 1.88) via [rustup](https://rustup.rs). From the
+repository root, run before every pull request:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo test --all-features
+```
+
+For documentation-only changes, `git diff --check` is enough. New Rust
+dependencies must have a compatible licence and be listed in
+[docs/third-party.md](docs/third-party.md).
 
 ## Branching
 
