@@ -77,6 +77,8 @@ relative links.
 - Branching, Conventional Commits and PRs: see `CONTRIBUTING.md` (D-17).
   Feature branches from `main`, changes only via PR. Update affected vision,
   roadmap and decision documents in the same PR.
+- In CI via `.github/workflows/implement-issue.yml` (D-27): follow the
+  workflow prompt; do not push or open the PR yourself.
 - Every source file starts with the SPDX header:
   ```rust
   // SPDX-License-Identifier: EUPL-1.2

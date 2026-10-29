@@ -1,0 +1,190 @@
+# SPDX-License-Identifier: EUPL-1.2
+name: Implement issue
+
+# Manually triggered: Claude Code implements exactly the issue passed in and
+# opens a regular (non-draft) PR to `main`. No schedule, no automatic issue
+# selection, no automated review bots; a human reviews the PR (D-27).
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to implement'
+        required: true
+        type: string
+      model:
+        description: 'Model alias or pinned ID (e.g. opus, sonnet)'
+        required: false
+        type: string
+        default: 'opus'
+      effort:
+        description: 'Reasoning effort (low | medium | high | xhigh | max)'
+        required: false
+        type: string
+        default: 'medium'
+      max_turns:
+        description: 'Turn budget for the agent'
+        required: false
+        type: string
+        default: '200'
+
+# One run per issue at a time; never cancel an in-flight implementation.
+concurrency:
+  group: implement-issue-${{ inputs.issue }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write # required by anthropics/claude-code-action (OIDC)
+
+jobs:
+  implement:
+    name: Implement #${{ inputs.issue }}
+    runs-on: ubuntu-latest
+    # Must exceed what the turn budget can consume, so the agent's own cap is
+    # hit first and the push step below can still save partial work.
+    timeout-minutes: 150
+    env:
+      ISSUE: ${{ inputs.issue }}
+      BRANCH: claude/issue-${{ inputs.issue }}
+    steps:
+      - name: Validate issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::Issue input must be a number, got '$ISSUE'."
+            exit 1
+          fi
+          STATE=$(gh issue view "$ISSUE" --json state --jq .state) || {
+            echo "::error::Issue #$ISSUE not found."
+            exit 1
+          }
+          if [ "$STATE" != "OPEN" ]; then
+            echo "::error::Issue #$ISSUE is $STATE, not OPEN."
+            exit 1
+          fi
+          if gh api "repos/$GH_REPO/branches/$BRANCH" --silent 2>/dev/null; then
+            echo "::error::Branch $BRANCH already exists; delete it or finish its PR first."
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          # A PAT is only needed once PRs should trigger other workflows (CI);
+          # PRs created with GITHUB_TOKEN do not trigger them.
+          token: ${{ secrets.AUTOMATION_PAT || secrets.GITHUB_TOKEN }}
+
+      # Always installed, so an issue that creates the Cargo workspace can
+      # build and test it, too.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        if: ${{ hashFiles('Cargo.lock') != '' }}
+        uses: Swatinem/rust-cache@v2
+
+      - name: Create branch
+        run: |
+          git config user.name 'grand-coach-bot'
+          git config user.email 'grand-coach-bot@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Implement via Claude Code
+        id: claude
+        # Agent errors (e.g. turn budget exhausted) must not discard partial
+        # work; the push step reports the outcome instead.
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # API billing instead of the subscription:
+          #   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Implement GitHub issue #${{ inputs.issue }} of this repository completely.
+            Read it first with `gh issue view ${{ inputs.issue }} --comments`.
+
+            You are running unattended in CI on branch claude/issue-${{ inputs.issue }}.
+            Nobody can answer questions; make reasonable decisions and document them.
+
+            Rules:
+            1. `AGENTS.md` and the documents it lists are authoritative: hard
+               rules, SPDX headers, English repository language, new D entries
+               in `docs/decisions.md`, affected docs updated in the same change.
+            2. Commit your work with Conventional Commits (see CONTRIBUTING.md).
+               End every commit message with
+               `Co-Authored-By: Claude <noreply@anthropic.com>`.
+            3. Verify before finishing. If `Cargo.toml` exists, run
+               `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
+               and `cargo test`. Always run `git diff --check main`.
+               Fix everything you introduced.
+            4. Do not push and do not create the PR; the workflow does that.
+               Write the PR title (Conventional Commit, one line) to
+               `$RUNNER_TEMP/pr-title.txt` and the PR body to
+               `$RUNNER_TEMP/pr-body.md`, following
+               `.github/pull_request_template.md`. Use `Closes #${{ inputs.issue }}`
+               only if the issue is fully done; otherwise use
+               `Refs #${{ inputs.issue }}` and add a "What remains" section.
+               End the body with
+               `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+            5. Do not edit `.github/workflows/**` or security settings.
+          # claude-code-action does not grant Bash by default and nobody can
+          # approve tool prompts in CI. `Task` enables subagents from
+          # `.claude/agents/`. Safety rests on human review of the PR.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --effort ${{ inputs.effort }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,Skill"
+
+      - name: Push branch and open PR
+        # Runs even when the agent failed, so partial work is not lost.
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_PAT || secrets.GITHUB_TOKEN }}
+          AGENT_OUTCOME: ${{ steps.claude.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]; then
+            echo "No commits produced for #$ISSUE (agent outcome: $AGENT_OUTCOME)."
+            gh issue comment "$ISSUE" --body \
+              "🤖 Claude produced no commits for this issue (agent outcome: \`$AGENT_OUTCOME\`). See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            exit 0
+          fi
+
+          # claude-code-action repoints origin at its own token, which may not
+          # be allowed to push; re-establish auth with GH_TOKEN.
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          gh auth setup-git
+          git push --set-upstream origin "$BRANCH"
+
+          TITLE_FILE="$RUNNER_TEMP/pr-title.txt"
+          BODY_FILE="$RUNNER_TEMP/pr-body.md"
+          if [ -s "$TITLE_FILE" ]; then
+            TITLE=$(head -n 1 "$TITLE_FILE")
+          else
+            TITLE="feat: $(gh issue view "$ISSUE" --json title --jq .title) (#$ISSUE)"
+          fi
+          if [ ! -s "$BODY_FILE" ]; then
+            printf 'Refs #%s\n\nClaude did not write a PR description; treat this as work in progress.\n' \
+              "$ISSUE" > "$BODY_FILE"
+          fi
+          if [ "$AGENT_OUTCOME" != "success" ]; then
+            printf '\n> ⚠️ **Partial work**: the agent did not report success (outcome: `%s`, often the turn budget). Check the diff for completeness.\n' \
+              "$AGENT_OUTCOME" >> "$BODY_FILE"
+          fi
+
+          PR_URL=$(gh pr create --base main --head "$BRANCH" \
+            --title "$TITLE" --body-file "$BODY_FILE")
+          gh issue comment "$ISSUE" --body \
+            "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`)."

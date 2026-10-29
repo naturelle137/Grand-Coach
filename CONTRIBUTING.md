@@ -51,6 +51,15 @@ Example: `docs: add roadmap with milestones`
 - If a change affects a decision, the vision or the roadmap, update the
   matching file in `docs/` in the same PR.
 
+## Automated implementation (Claude)
+
+Maintainers can let Claude implement a single issue (D-27): Actions →
+"Implement issue" → enter the issue number, or
+`gh workflow run implement-issue.yml -f issue=<n>`. Claude works on the
+branch `claude/issue-<n>` and opens a regular PR to `main`, which is reviewed
+like any other PR. Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
+(created with `claude setup-token`).
+
 ## Licences
 
 By contributing you agree that code is licensed under the EUPL-1.2 and other
