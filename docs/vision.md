@@ -1,113 +1,114 @@
 # Vision: Grand-Coach
 
-## Ziel
+## Goal
 
-Ein Skat-Trainer für PC (Linux, Windows 11). Man spielt vollständiges Skat
-gegen zwei Computergegner und wird dabei von einem abschaltbaren Live-Coach
-begleitet. Der Coach **erklärt den Denkweg**, nicht nur den besten Zug:
+A Skat trainer for PC (Linux, Windows 11). You play full Skat against two
+computer opponents, accompanied by an optional live coach. The coach
+**explains the line of thought**, not just the best move:
 
-1. **Worüber musst du jetzt nachdenken?** (z. B. Trumpfverteilung, Blankkarten,
-   Stand der Augen, was das Reizen verraten hat)
-2. **Welche Optionen hast du?**
-3. **Wie bewerten sie sich, und warum solltest du dich für eine entscheiden?**
+1. **What do you need to think about now?** (e.g. trump distribution, singleton
+   cards, card points so far, what the bidding revealed)
+2. **What are your options?**
+3. **How do they compare, and why should you pick one?**
 
-Das gilt beim Reizen, Skat aufnehmen und Drücken, bei der Spielwahl und beim
-Ausspielen und Zugeben.
+This applies to bidding, picking up the Skat and discarding, choosing the game
+type, and to leading and following.
 
-Der Nutzer will vor allem das **Kartenzählen** und das **Hineinversetzen in
-den Gegner** verbessern.
+The user mainly wants to improve **card counting** and **putting themselves in
+the opponents' shoes**.
 
 ## Features
 
-### Spiel
-- Vollständiges Skat nach **Internationaler Skatordnung (ISkO)**: Reizen,
-  Hand, Skat, Drücken, Farbspiele, Grand, Null (Hand/Ouvert),
-  Schneider/Schwarz angesagt, Ouvert.
-- **Kontra/Re** als Option (abschaltbar).
-- Passen alle, wird **eingepasst** (neu gegeben). Kein Ramsch, kein Bock.
-- Wertung nach **Seeger-Fabian**.
-- **Serien** mit fester Spielzahl (z. B. 36) und **freies Spiel**.
-- **Gegnerstärke in 3–4 Stufen**. Die Stufen unterscheiden sich in Rechentiefe,
-  Gedächtnis (zählt der Gegner Karten?) und Fehlerquote. Gegner schummeln
-  nie: Sie sehen nur, was ein Mensch an ihrem Platz sähe.
-- **Replay**: Abgeschlossene Spiele Stich für Stich ansehen, mit
-  Coach-Kommentar. **Gleiches Blatt neu spielen**, um Alternativen auszuprobieren.
-- Normales Spiel ganz ohne Coach.
+### Game
+- Full Skat according to the **International Skat Rules (ISkO)**: bidding,
+  Hand, Skat, discarding, suit games, Grand, Null (Hand/Ouvert),
+  announced Schneider/Schwarz, Ouvert.
+- **Kontra/Re** as an option (can be switched off). Detailed rules follow the
+  common German pub Skat variant, see D-03.
+- If all players pass, the hand is **thrown in** (redealt). No Ramsch, no Bock.
+- Scoring per **Seeger-Fabian**.
+- **Series** with a fixed number of games (e.g. 36) and **free play**.
+- **Opponent strength in 3–4 levels**, differing in search depth, memory (do
+  they count cards?) and error rate. Opponents never cheat: they only see what
+  a human in their seat would see.
+- **Replay**: step through finished games trick by trick, with coach comments.
+  **Replay the same deal** to try out alternatives.
+- Normal play without the coach.
 
 ### Coach
-- **Eingriffsstufen**: aus / auf Anfrage (Hilfe-Knopf) / bei wichtigen
-  Entscheidungen / bei jedem Zug.
-- **Darstellung**: verbale Erklärung plus Kennzahlen je Option
-  (Gewinnwahrscheinlichkeit, erwartete Punkte). Die Zahlen sind ausblendbar.
-- **Analyse nach dem Spiel**: die 2–3 entscheidenden Momente, jeweils mit der
-  besseren Alternative und Begründung.
-- **Statistik über Zeit**: Fehlertypen sammeln (z. B. „Trumpfstand falsch
-  eingeschätzt“), damit Schwächen sichtbar werden.
+- **Intervention levels**: off / on request (help button) / at important
+  decisions / at every move.
+- **Presentation**: verbal explanation plus figures per option (winning
+  probability, expected points). The figures can be hidden.
+- **Warning before a weak move**: optional setting, off by default.
+- **Post-game analysis**: the 2–3 decisive moments, each with the better
+  alternative and the reasoning.
+- **Statistics over time**: error types are collected (e.g. "misjudged the
+  remaining trumps") so that weaknesses become visible.
 
-### Kartenzählen
-- **Zählhilfe** (zuschaltbar): gespielte Karten, offene Trümpfe, Augen beider
-  Parteien, erkannte Fehlfarben der Gegner.
-- **Quiz im Spiel**: Das Spiel fragt zwischendurch z. B. „Wie viele Trümpfe
-  sind noch draußen?“ und vergleicht die Antwort mit der Wahrheit.
-- **Trainingsmodus** (spätere Ausbaustufe): gezielte Übungssituationen
-  außerhalb eines vollen Spiels.
+### Card counting
+- **Counting aid** (optional): cards played, trumps still out, card points of
+  both parties, opponents' known voids.
+- **In-game quiz**: the game asks now and then, e.g. "How many trumps are
+  still out?", and compares the answer with the truth.
+- **Training mode** (later stage): targeted practice situations outside a
+  full game.
 
-### Offener Modus
-- Der Spieler sieht alle Karten. Der Coach erklärt weiterhin nur das **eigene**
-  Spiel und zeigt, **wie man die gegnerischen Blätter im verdeckten Spiel hätte
-  erschließen können**: Welche Information lieferten Reizen, Abwerfen und
-  Bedienen?
+### Open mode
+- The player sees all cards. The coach still explains only the player's
+  **own** game and shows **how the opponents' hands could have been deduced in
+  a closed game**: what did bidding, discards and following suit reveal?
 
-### Darstellung
-- Schlichte Grafik im Stil der 90er/2000er. Gut erkennbare Karten haben
-  Vorrang vor Effekten.
-- **Kartenbild umschaltbar**. Standard ist das französische Turnierbild mit
-  vier Farben (Kreuz schwarz, Pik grün, Herz rot, Karo gelb). Dazu kommt das
-  klassische zweifarbige Bild, später evtl. ein deutsches Blatt.
-- Karten werden **selbst erzeugt** (per Skript generierte SVGs).
-- Oberfläche und Coach-Texte auf **Deutsch und Englisch**.
+### Presentation
+- Plain graphics in the style of the 90s/2000s. Card legibility comes before
+  effects.
+- **Switchable card faces**: French tournament deck with four colours
+  (default; clubs black, spades green, hearts red, diamonds yellow), classic
+  two-colour French deck, German deck (Altenburger Bild).
+- Cards are **self-made** (SVGs generated by a script).
+- UI and coach texts in **German and English**.
 
-## Architektur (Leitlinie)
+## Architecture (guideline)
 
 ```
-skat-core      Regel-Engine: rein, deterministisch (Seed), ohne GUI/IO
+skat-core      rule engine: pure, deterministic (seed), no GUI/IO
    ↓
-skat-analysis  Kartenzähler/Wissensstand, Gegnermodell (Verteilungen aus
-               Reizen/Abwürfen), Bewertung der Optionen (Monte-Carlo +
-               Double-Dummy-Löser)
+skat-analysis  card counter / knowledge state, opponent model (distributions
+               from bidding/discards), option evaluation (Monte Carlo +
+               double-dummy solver)
    ↓
-skat-ai        Gegner-KI (Stärkestufen)  │  skat-coach  strukturierte
-                                         │  Erklärungen (Überlegungen,
-                                         │  Optionen, Bewertung)
+skat-ai        opponent AI (strength levels)  │  skat-coach  structured
+                                              │  explanations (considerations,
+                                              │  options, evaluation)
    ↓
-skat-app       Anwendungsschnittstelle (Fassade): Sitzung, Befehle, Ereignisse,
-               Sichtmodelle. Einzige API, die Frontends nutzen.
+skat-app       application interface (facade): session, commands, events,
+               view models. The only API frontends use.
    ↓
-gui-egui       erstes Frontend (Rust + egui)
-gui-godot      späteres Frontend (Godot über godot-rust/gdext)
+gui-egui       first frontend (Rust + egui)
+gui-godot      later frontend (Godot via godot-rust/gdext)
 ```
 
-Grundsätze:
-- **Der Coach verbalisiert nur, was die Analyse berechnet hat.** Er liefert
-  strukturierte Daten (Textschlüssel + Parameter). Übersetzt wird erst an der
-  Oberfläche.
-- **Informationsmengen sind sauber getrennt**: KI und Coach arbeiten auf der
-  Sicht eines Spielers, nie auf dem vollständigen Spielzustand. Nur der offene
-  Modus und die Nachanalyse dürfen alles sehen, und das ist ausdrücklich
-  gekennzeichnet.
-- **Frontend-unabhängig**: `skat-app` kennt weder egui noch Godot. Befehle,
-  Ereignisse und Sichtmodelle sind einfache, serialisierbare Datentypen. So
-  lässt sich Godot später ohne Eingriff in Engine oder Coach anbinden.
+Principles:
+- **The coach only verbalises what the analysis has computed.** It produces
+  structured data (text keys + parameters); translation happens in the
+  presentation layer.
+- **Information sets are strictly separated**: AI and coach work on one
+  player's view, never on the full game state. Only open mode and post-game
+  analysis may see everything, and that is marked explicitly.
+- **Frontend-independent**: `skat-app` knows neither egui nor Godot. Commands,
+  events and view models are plain, serialisable data types, so Godot can be
+  attached later without touching engine or coach.
 
-## Abgrenzung (nicht im Ziel)
+## Out of scope
 
-- Kein Online- oder Mehrspieler-Modus, keine menschlichen Mitspieler.
-- Kein Ramsch, kein Bock, keine weiteren Kneipenregeln (evtl. später als Option).
-- Keine Mobil- oder Web-Version (Godot könnte das später ermöglichen, ist aber
-  kein Ziel).
-- Keine Echtgeld- oder Turnierfunktionen.
-- Keine aufwändige Grafik oder Animation.
+- No online or multiplayer mode, no human fellow players.
+- No Ramsch, no Bock, no further pub rules (maybe later as an option).
+  Exception: Kontra/Re per D-03.
+- No mobile or web version (Godot might enable that later, but it is not a
+  goal).
+- No real-money or tournament features.
+- No elaborate graphics or animation.
 
-## Getroffene Entscheidungen
+## Decisions taken
 
-Siehe [decisions.md](decisions.md).
+See [decisions.md](decisions.md).

@@ -1,30 +1,50 @@
-# Entscheidungslog
+# Decision log
 
-Format: Nummer, Datum, Entscheidung, kurze Begründung. Spätere Änderungen als
-neuer Eintrag, der den alten ersetzt („ersetzt D-xx“).
+Format: number, date, decision, short rationale. Once merged, a decision is
+changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 
-| Nr | Datum | Entscheidung | Begründung |
-|----|-------|--------------|------------|
-| D-01 | 2026-10-29 | Lizenz Code: EUPL-1.2; Inhalte (assets/, docs/): CC BY-SA 4.0. SPDX-Kopfzeile in jeder Quelldatei. Die frühere MIT-LICENSE aus dem Initial Commit ist ersetzt. | Vorgabe des Projektinhabers. |
-| D-02 | 2026-10-29 | Regelwerk: ISkO strikt, alle ISkO-Spielarten im MVP. | Eine eindeutige Referenz. Eine vollständige Engine ist Voraussetzung für Coach und KI. |
-| D-03 | 2026-10-29 | Kontra/Re als abschaltbare Option. | In der ISkO nur bei Vereinbarung üblich. Für das Training trotzdem relevant. |
-| D-04 | 2026-10-29 | Kein Ramsch, kein Bock. Passen alle, wird eingepasst. | Entspricht der ISkO und hält den Umfang klein. |
-| D-05 | 2026-10-29 | Wertung Seeger-Fabian. Serien mit fester Länge und freies Spiel. | Turnierstandard, vergleichbare Leistung. |
-| D-06 | 2026-10-29 | Replay mit Coach-Kommentar und „gleiches Blatt neu spielen“. Partien deterministisch per Seed. | Lernen durch Vergleich. Determinismus hilft auch beim Testen. |
-| D-07 | 2026-10-29 | Gegnerstärke in 3–4 Stufen (Rechentiefe, Gedächtnis, Fehlerquote). KI sieht nie fremde Karten. | Faires Training, verständliche Wahl. |
-| D-08 | 2026-10-29 | Coach-Eingriff in Stufen: aus / auf Anfrage / wichtige Entscheidungen / jeder Zug. Darstellung als Text plus ausblendbare Kennzahlen. | Der Lernende steuert selbst, wie viel Hilfe er bekommt. |
-| D-09 | 2026-10-29 | Feedback: Analyse nach dem Spiel und Fehlerstatistik über Zeit. Keine Warnung vor dem Zug. | Selbst denken lassen, danach auswerten. |
-| D-10 | 2026-10-29 | Kartenzähl-Quiz im Spiel. Eigener Trainingsmodus als spätere Ausbaustufe. | Kartenzählen ist die größte Schwäche des Nutzers. |
-| D-11 | 2026-10-29 | Tech-Stack: Rust (Cargo-Workspace) + egui. Langfristig Godot über godot-rust (gdext) als zweites Frontend. | Schnell genug für Monte-Carlo auf allen Kernen, eine Binary pro Plattform. egui passt zum schlichten Stil. |
-| D-12 | 2026-10-29 | Frontends sprechen nur mit `skat-app` (Befehle, Ereignisse, Sichtmodelle als einfache Datentypen). Kein Frontend-Code in Engine, Analyse, KI oder Coach. | Godot soll ohne Eingriffe in die Kernlogik anbindbar sein. |
-| D-13 | 2026-10-29 | Coach erzeugt strukturierte Erklärungen (Textschlüssel + Parameter). Übersetzung erst in der Präsentation. | „Der Coach verbalisiert nur, was berechnet wurde.“ Funktioniert so mit beiden Frontends und beiden Sprachen. |
-| D-14 | 2026-10-29 | Kartenbild umschaltbar: Standard ist das französische Turnierbild mit vier Farben, dazu das klassische zweifarbige Bild. Karten selbst per Skript als SVG erzeugt. | Gute Erkennbarkeit, keine Lizenzrisiken. |
-| D-15 | 2026-10-29 | Oberfläche zweisprachig (Deutsch/Englisch). Code, Bezeichner und Kommentare auf Englisch. Skat-Fachbegriffe bleiben deutsch (Grand, Null, Skat, Schneider …). | Zugänglichkeit. Fachbegriffe sind international üblich. |
+| No | Date | Decision | Rationale |
+|----|------|----------|-----------|
+| D-01 | 2026-10-29 | License for code: EUPL-1.2; content (assets/, docs/): CC BY-SA 4.0. SPDX header in every source file. Replaces the earlier MIT LICENSE from the initial commit. | Set by the project owner. |
+| D-02 | 2026-10-29 | Rules: ISkO, all ISkO game types in the MVP. Only exception: Kontra/Re (D-03). | One unambiguous reference; a complete engine is a prerequisite for coach and AI. |
+| D-03 | 2026-10-29 | Kontra/Re as a switchable option, following the common German pub Skat variant (esp. the rules of the Online-Skatclub). Details below the table. | Not standard in ISkO, but relevant for training; the pub variant is the widespread one. |
+| D-04 | 2026-10-29 | No Ramsch, no Bock. If all pass, the hand is thrown in. | Matches the ISkO and keeps the scope small. |
+| D-05 | 2026-10-29 | Scoring Seeger-Fabian. Series with fixed length and free play. | Tournament standard, comparable performance. |
+| D-06 | 2026-10-29 | Replay with coach comments and "replay the same deal". Games are deterministic via seed. | Learning by comparison; determinism also helps testing. |
+| D-07 | 2026-10-29 | Opponent strength in 3–4 levels (search depth, memory, error rate). The AI never sees other players' cards. | Fair training, an understandable choice. |
+| D-08 | 2026-10-29 | Coach intervention in levels: off / on request / important decisions / every move. Presentation: text plus figures that can be hidden. | The learner controls how much help they get. |
+| D-09 | 2026-10-29 | Feedback: post-game analysis and error statistics over time. Warning before a weak move is an optional setting, off by default. | Think for yourself first, evaluate afterwards; the warning is there for those who want it. |
+| D-10 | 2026-10-29 | Card-counting quiz during play. A dedicated training mode is a later stage. | Card counting is the user's biggest weakness. |
+| D-11 | 2026-10-29 | Tech stack: Rust (Cargo workspace) + egui. Long term, Godot via godot-rust (gdext) as a second frontend. | Fast enough for Monte Carlo on all cores; one binary per platform; egui suits the plain style. |
+| D-12 | 2026-10-29 | Frontends talk only to `skat-app` (commands, events, view models as plain data types). No frontend code in engine, analysis, AI or coach. | Godot must be attachable without touching the core logic. |
+| D-13 | 2026-10-29 | The coach produces structured explanations (text keys + parameters); translation happens only in the presentation layer. | "The coach only verbalises what was computed"; works with both frontends and both languages. |
+| D-14 | 2026-10-29 | Switchable card faces: French tournament deck with four colours (default), classic two-colour French deck, German deck (Altenburger Bild). All cards generated by script as SVG. | Good legibility, choice for players used to either deck, no licensing risk. |
+| D-15 | 2026-10-29 | UI bilingual (German/English). | Accessibility. |
+| D-16 | 2026-10-29 | Repository language is English: code, comments, commits, docs, PR texts. Skat terms stay German (glossary in CLAUDE.md). README is primarily German with an English section. | Open to international contributors; Skat terms are established. |
+| D-17 | 2026-10-29 | Branching: `main` plus feature branches; changes reach `main` only via pull request. Commit messages follow Conventional Commits. | Simple, sufficient for a small project; readable history. |
+| D-18 | 2026-10-29 | Code of conduct: Contributor Covenant 2.1. | Widely used standard. |
 
-## Offene Punkte
+### D-03 Kontra/Re in detail
 
-- Detailregeln Kontra/Re (wer darf wann, Wertung) bei der Umsetzung gegen die
-  aktuelle ISkO und die DSkV-Ligaregeln prüfen.
-- i18n-Bibliothek (Kandidat: Fluent / `fluent-rs`) und SVG-Rendering
-  (Kandidat: `resvg`, oder vorab gerasterte PNGs) bei Projektstart festlegen.
-- Zusammenhang „Stärkestufe ↔ Parameter“ empirisch kalibrieren (KI gegen KI).
+1. **Who may say Kontra:** each defender who has bid or held at least 18.
+   Usual exception for rear hand (Hinterhand) if fore hand (Vorhand) and
+   middle hand (Mittelhand) have already bid beyond 18.
+2. **When:** after the game announcement and before the defender in question
+   plays their first card. Only one Kontra per game.
+3. **Re:** only the declarer, and only immediately in reply to Kontra. No
+   further escalation.
+4. **Scoring:** Kontra doubles and Kontra plus Re quadruples the regular game
+   points, including loss points that may already be doubled. The bid value
+   and the overbid check are unaffected. With Seeger-Fabian the extra
+   +50/−50 and +40 points are not multiplied.
+5. **Game types:** Kontra and Re are allowed in suit, Grand and Null games,
+   including Hand games. In open games the announcements must be settled
+   before the cards are revealed. Unlike some pub rule profiles, Re is also
+   allowed in Null and Null Hand.
+
+## Open points
+
+- i18n library (candidate: Fluent / `fluent-rs`) and SVG rendering
+  (candidate: `resvg`, or pre-rasterised PNGs) to be chosen when coding
+  starts.
+- Calibrate "strength level ↔ parameters" empirically (AI vs. AI).

@@ -1,18 +1,17 @@
-# Fremde Dateien und Bibliotheken
+# Third-party files and libraries
 
-Jede fremde Datei (Grafik, Schrift, Sound, kopierter Code) und jede
-Laufzeit-Abhängigkeit mit besonderer Lizenz wird hier eingetragen, **bevor**
-sie ins Repo kommt.
+Every third-party file (graphic, font, sound, copied code) and every runtime
+dependency with a notable licence is recorded here **before** it enters the
+repository.
 
-Zulässig sind Lizenzen, die mit EUPL-1.2 (Code) bzw. CC BY-SA 4.0 (Inhalte)
-vereinbar sind. Für Code sind das z. B. MIT, Apache-2.0, BSD, Zlib, MPL-2.0
-und die im Anhang der EUPL genannten Lizenzen. Für Inhalte: gemeinfrei, CC0,
-CC BY, CC BY-SA, OFL (Schriften). Nicht zulässig: NC- und ND-Lizenzen, Dateien
-mit unklarer Herkunft.
+Allowed are licences compatible with EUPL-1.2 (code) or CC BY-SA 4.0
+(content). For code, e.g. MIT, Apache-2.0, BSD, Zlib, MPL-2.0 and the licences
+listed in the EUPL appendix. For content: public domain, CC0, CC BY, CC BY-SA,
+OFL (fonts). Not allowed: NC and ND licences, files of unclear origin.
 
-Rust-Crates werden per `cargo deny` geprüft (Konfiguration folgt). Hier stehen
-nur Crates mit Copyleft oder anderen Besonderheiten.
+Only crates with copyleft or other particularities are listed here; the
+general check of Rust dependencies is still to be set up.
 
-| Datei / Bibliothek | Herkunft (URL) | Autor | Lizenz | Änderungen |
-|--------------------|----------------|-------|--------|------------|
-| –                  | –              | –     | –      | –          |
+| File / library | Source (URL) | Author | Licence | Changes |
+|----------------|--------------|--------|---------|---------|
+| –              | –            | –      | –       | –       |
