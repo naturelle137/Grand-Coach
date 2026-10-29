@@ -170,7 +170,7 @@ jobs:
           GATE="passed"
           if git cat-file -e "$BASE_SHA:scripts/check.sh" 2>/dev/null; then
             git show "$BASE_SHA:scripts/check.sh" > "$RUNNER_TEMP/check.sh"
-            bash "$RUNNER_TEMP/check.sh" full || GATE="failed"
+            bash "$RUNNER_TEMP/check.sh" full --base "$BASE_SHA" || GATE="failed"
           fi
           # The gate just ran; skip the pre-push hook.
           git push --no-verify --set-upstream origin "$BRANCH"

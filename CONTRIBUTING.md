@@ -37,8 +37,11 @@ git config core.hooksPath .githooks
 scripts/check.sh          # full gate, as in CI
 ```
 
-CI runs the same gate on every pull request; its check `ci-ok` must pass
-before a PR can be merged. Details: [docs/testing.md](docs/testing.md).
+Tests only run when code files changed; docs-only changes are linted
+(including markdownlint). For the linters locally:
+`sudo dnf install nodejs ShellCheck`; missing ones are skipped with a
+warning. CI runs the same gate on every pull request; its check `ci-ok`
+must pass before a PR can be merged. Details: [docs/testing.md](docs/testing.md).
 
 Use `cargo fetch --locked` to download the locked dependencies in advance.
 Build and test commands can then use `--locked --offline`, for example

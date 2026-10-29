@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: EUPL-1.2
+# markdownlint rules: https://github.com/DavidAnson/markdownlint (D-30)
+config:
+  default: true
+  # Lines are wrapped by hand; tables and links may be longer.
+  MD013: false
+  # Same heading text under different parents is fine.
+  MD024:
+    siblings_only: true

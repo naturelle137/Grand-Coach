@@ -10,9 +10,9 @@ and agents only call it, so they cannot drift apart.
 |-------|------|------|----------|
 | Claude Code hooks (`.claude/settings.json`) | agent sessions, local and CI | – | activate the git hooks; block `--no-verify` and changing `core.hooksPath` |
 | `pre-commit` (`.githooks/`) | every commit | `quick` | local feedback; can be skipped by humans |
-| `pre-push` (`.githooks/`) | every push | `full` | local feedback; can be skipped by humans |
-| `implement-issue.yml` | after the agent, before the PR | `full` | red gate → draft PR with a warning |
-| CI `ci.yml`, job `ci-ok` | every PR and push to `main` | `full` + MSRV, Linux and Windows | **required status check on `main`; the only hard gate** |
+| `pre-push` (`.githooks/`) | every push | `full --base` | local feedback; can be skipped by humans |
+| `implement-issue.yml` | after the agent, before the PR | `full --base` | red gate → draft PR with a warning |
+| CI `ci.yml`, job `ci-ok` | every PR and push to `main` | `lint`, `test` on Linux and Windows, MSRV | **required status check on `main`; the only hard gate** |
 | CI `ci.yml`, job `deep` | weekly and on demand | `deep` | scheduled-run failure mails the maintainer |
 
 Hooks are fast feedback, not security: anyone can skip them. Merge
@@ -33,24 +33,39 @@ snapshot; CI checks the real commit.
 
 ## Tiers of `scripts/check.sh`
 
-- `quick` (seconds): whitespace and SPDX headers of staged files; rustfmt
-  and clippy only when Rust files are staged.
-- `full` (default): whitespace and SPDX of the whole tree, rustfmt, clippy
-  and `cargo test`, each with and without `--all-features`, all `--locked`.
+- `lint` (seconds, no compilation): whitespace, SPDX headers, rustfmt,
+  markdownlint (`.markdownlint-cli2.yaml`), shellcheck, actionlint.
+- `test`: clippy and `cargo test`, each with and without `--all-features`,
+  all `--locked`.
+- `quick` (pre-commit): `lint`, plus clippy when code files are staged.
+- `full` (pre-push, default): `lint` and `test`. With `--base REV`, `test`
+  is skipped when no code file changed since REV.
 - `deep`: the seeded random games with `SKAT_RANDOM_GAMES` games (default
   1,000,000) in release mode.
+
+**Code files** (changes trigger `test`): `*.rs`, `Cargo.toml`,
+`Cargo.lock`, `rust-toolchain*`, `assets/`, `scripts/check.sh` and
+`.github/workflows/ci.yml`. Docs-only changes run only `lint`. CI decides
+this in the job `changes` instead of a `paths:` filter, so `ci-ok` is
+always reported and never blocks a docs PR.
+
+Linters missing locally are skipped with a warning; CI sets
+`CHECK_STRICT=1`, where a missing linter fails. Local install (Fedora):
+`sudo dnf install nodejs ShellCheck` (markdownlint runs via `npx`),
+actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 
 ## Test levels
 
 | Level | Here | Where | Tier |
 |-------|------|-------|------|
-| Unit | functions and types inside a crate | `#[cfg(test)]` modules | full |
-| Component (service) | one crate through its public API, fixed deals | `crates/*/tests/` | full |
-| Interface / contract | serde round-trips, determinism (seed → deal, replay), later `skat-app` commands/events/view models as frozen JSON | `tests/serde.rs`, golden files | full |
-| System | whole games end to end: 10,000 seeded random games against an independent rule model; later AI-vs-AI series and a GUI smoke run | `tests/random_games.rs` | full (10k), deep (1M) |
+| Static analysis | rustfmt, clippy, markdown, shell and workflow linters | `scripts/check.sh` | lint, test |
+| Unit | functions and types inside a crate | `#[cfg(test)]` modules | test |
+| Component (service) | one crate through its public API, fixed deals | `crates/*/tests/` | test |
+| Interface / contract | serde round-trips, determinism (seed → deal, replay), later `skat-app` commands/events/view models as frozen JSON | `tests/serde.rs`, golden files | test |
+| System | whole games end to end: 10,000 seeded random games against an independent rule model; later AI-vs-AI series and a GUI smoke run | `tests/random_games.rs` | test (10k), deep (1M) |
 
 New crates follow the same pattern; anything that takes minutes belongs in
-`deep`, everything else in `full`.
+`deep`, everything else in `test`.
 
 ## Verification vs. validation
 

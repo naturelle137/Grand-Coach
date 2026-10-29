@@ -68,17 +68,20 @@ Translations live in `assets/i18n/`.
 All checks run through one script (D-30, `docs/testing.md`):
 
 ```sh
-scripts/check.sh          # full gate: whitespace, SPDX, fmt, clippy, tests (± features)
-scripts/check.sh quick    # pre-commit subset
+scripts/check.sh          # full gate: lint + test
+scripts/check.sh lint     # whitespace, SPDX, rustfmt, markdownlint, shellcheck, actionlint
+scripts/check.sh test     # clippy and tests, with and without features
 scripts/check.sh deep     # 1,000,000 seeded random games (weekly in CI)
 ```
 
 The git hooks in `.githooks/` run `quick` before each commit and `full`
-before each push; Claude Code activates them via `.claude/settings.json`.
-CI runs `full` on Linux and Windows plus an MSRV check; its job `ci-ok` is
-required to merge into `main`. `cargo test` includes 10,000 seeded random
+before each push (tests only when code files changed); Claude Code
+activates them via `.claude/settings.json`. CI always runs `lint`, and
+`test` on Linux and Windows plus an MSRV check when code changed; its job
+`ci-ok` is required to merge into `main`. Locally missing linters are
+skipped with a warning; CI runs them all. `cargo test` includes 10,000 seeded random
 games (`crates/skat-core/tests/random_games.rs`). For documentation
-changes, also check relative links.
+changes, also check relative links (not automated).
 Document new commands here and in `CONTRIBUTING.md` only once verified.
 
 Local Fedora 44 Distrobox setup is documented in `CONTRIBUTING.md` and was
