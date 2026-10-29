@@ -61,11 +61,24 @@ actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 | Static analysis | rustfmt, clippy, markdown, shell and workflow linters | `scripts/check.sh` | lint, test |
 | Unit | functions and types inside a crate | `#[cfg(test)]` modules | test |
 | Component (service) | one crate through its public API, fixed deals | `crates/*/tests/` | test |
-| Interface / contract | serde round-trips, determinism (seed → deal, replay), later `skat-app` commands/events/view models as frozen JSON | `tests/serde.rs`, golden files | test |
-| System | whole games end to end: 10,000 seeded random games against an independent rule model; later AI-vs-AI series and a GUI smoke run | `tests/random_games.rs` | test (10k), deep (1M) |
+| Interface / contract | serde round-trips, determinism (seed → deal, replay); `skat-app` commands, events, view models and errors as JSON | `skat-core/tests/serde.rs`, `skat-app/tests/series.rs` | test |
+| System | whole games end to end: 10,000 seeded random games against an independent rule model; complete seeded 36-game series with a random human, information boundary of the human's view, opponent self-play | `skat-core/tests/random_games.rs`, `skat-app/tests/`, `skat-app/src/tests.rs`, `skat-ai` | test (10k), deep (1M) |
+| GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/` | test |
+| Manual smoke run | launch the window on each platform and play (see `CONTRIBUTING.md`) | – | per milestone |
 
 New crates follow the same pattern; anything that takes minutes belongs in
 `deep`, everything else in `test`.
+
+## Platform verification (M2)
+
+Evidence that the first playable version builds and runs. A platform
+counts as verified only with an interactive smoke test: launch, play a
+series to the score sheet, switch language and card faces.
+
+| Platform | Build | Launch | Interactive smoke test |
+|----------|-------|--------|------------------------|
+| Linux (Fedora 44 Distrobox, Wayland, Rust 1.99.1) | ✅ `cargo build --locked --release -p gui-egui`, 2026-10-29 | ✅ window opens and renders the first deal (`GRAND_COACH_SCREENSHOT`), 2026-10-29 | ❌ not yet by a person; headless click-through only (`gui-egui/tests/gui.rs`) |
+| Windows 11 | CI job `test (windows-latest)` builds and tests the frontend | ❌ not verified | ❌ not verified |
 
 ## Verification vs. validation
 
@@ -79,6 +92,6 @@ New crates follow the same pattern; anything that takes minutes belongs in
 
 ## Later (CD)
 
-With the first executable (M2): CI builds it on Linux and Windows. With
-M8: tagged releases build installable packages after `full` passes. No
-deployment before that.
+Since M2, `test` compiles and tests the frontend on Linux and Windows, so
+CI builds the executable on both. With M8: tagged releases build
+installable packages after `full` passes. No deployment before that.

@@ -25,12 +25,15 @@ Details: [docs/vision.md](docs/vision.md).
 
 ### Status
 
-Die Regel-Engine (`crates/skat-core`) ist fertig; noch nicht spielbar.
+Erste spielbare Version (Meilenstein M2): eine Serie gegen zwei einfache
+Computergegner, mit Kontra/Re, drei Kartenbildern und deutscher oder
+englischer Oberfläche. Unter Linux getestet, Windows 11 noch nicht.
 Fortschritt: [docs/roadmap.md](docs/roadmap.md).
 
 ### Systemvoraussetzungen
 
-*Noch offen.*
+Linux (Wayland oder X11) mit OpenGL bzw. EGL; Windows 11 ist das zweite
+Zielsystem, aber noch nicht getestet.
 
 ### Installation
 
@@ -38,10 +41,10 @@ Fortschritt: [docs/roadmap.md](docs/roadmap.md).
 
 ### Aus dem Quellcode bauen
 
-Benötigt Rust (stable, ab 1.88). Im Wurzelverzeichnis:
+Benötigt Rust (stable, ab 1.95). Im Wurzelverzeichnis:
 
 ```sh
-cargo build
+cargo build --release
 cargo test
 ```
 
@@ -49,7 +52,14 @@ Weitere Prüfungen stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Benutzung
 
-*Noch offen.*
+```sh
+cargo run --release -p gui-egui
+```
+
+Du spielst unten, die Gegner sitzen links und rechts. Über „Spiel → Neue
+Serie …“ wählst du feste Spielzahl (z. B. 36) oder freies Spiel, Kontra/Re
+und den Startwert; unter „Einstellungen“ Sprache und Kartenbild. Rechts
+stehen der letzte Stich und die Spielliste (Seeger-Fabian).
 
 ### Mitwirken
 
@@ -88,12 +98,15 @@ Details: [docs/vision.md](docs/vision.md).
 
 ### Status
 
-The rule engine (`crates/skat-core`) is done; not playable yet.
+First playable version (milestone M2): a series against two simple
+computer opponents, with Kontra/Re, three card faces and a German or
+English UI. Tested on Linux, not yet on Windows 11.
 Progress: [docs/roadmap.md](docs/roadmap.md).
 
 ### Requirements
 
-*To be defined.*
+Linux (Wayland or X11) with OpenGL or EGL; Windows 11 is the second target
+platform but has not been tested yet.
 
 ### Installation
 
@@ -101,10 +114,10 @@ Progress: [docs/roadmap.md](docs/roadmap.md).
 
 ### Building from source
 
-Requires Rust (stable, 1.88 or later). From the repository root:
+Requires Rust (stable, 1.95 or later). From the repository root:
 
 ```sh
-cargo build
+cargo build --release
 cargo test
 ```
 
@@ -112,7 +125,14 @@ Further checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Usage
 
-*To be defined.*
+```sh
+cargo run --release -p gui-egui
+```
+
+You play at the bottom; the opponents sit left and right. "Game → New
+series …" chooses a fixed number of games (e.g. 36) or free play,
+Kontra/Re and the seed; "Settings" switches language and card faces. The
+right-hand side shows the last trick and the score sheet (Seeger-Fabian).
 
 ### Contributing
 

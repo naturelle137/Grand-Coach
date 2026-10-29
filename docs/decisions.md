@@ -35,6 +35,11 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-28 | 2026-10-29 | Rule interpretations encoded in `skat-core` for M1, with the ISkO sources used. Details below the table. | Issue #5 requires ambiguities to be resolved and documented rather than invented silently. |
 | D-29 | 2026-10-29 | Issue implementation follows the project skill `implement-issue`, locally and in CI (the workflow only adds CI notes). Agents tick an issue's checklist items only when done and verified, never to suggest completeness; in CI the workflow applies only `[ ]` → `[x]` changes. | One procedure for all runs; the issue shows at a glance what is done. |
 | D-30 | 2026-10-29 | Verification gate: `scripts/check.sh` (tiers `lint`, `test`, `quick`, `full`, `deep`) is the single definition of the checks; linters are rustfmt, clippy, markdownlint, shellcheck and actionlint. Tests run only when code files changed. Git hooks (`.githooks/`, pre-commit `quick`, pre-push `full`) give local feedback; Claude Code hooks activate them and block bypassing. The only hard gate is the CI check `ci-ok` (always `lint`; `test` on Linux and Windows plus MSRV when code changed), required on `main`; `implement-issue.yml` dispatches CI itself and opens a draft PR on a red gate. Validation stays human: PR review and milestone playtests. Details in [testing.md](testing.md). | Hooks can be skipped and do not exist where Claude runs in GitHub Actions; only a server-side required check enforces "no failing tests on `main`" for humans and agents alike. One script avoids drift. |
+| D-31 | 2026-10-29 | Series semantics in `skat-app` for M2: player 0 is the human, players 1 (left) and 2 (right) the opponents; player 2 deals first, then the deal passes to the left. A thrown-in deal (Einpassen) counts as a game of the series and the next player deals. Details below the table. | Issue #6 requires documented series semantics; counting thrown-in deals follows tournament lists and keeps the deal rotation fixed. |
+| D-32 | 2026-10-29 | i18n with Fluent (`fluent-bundle`): one `.ftl` file per language under `assets/i18n/`, embedded into the frontend. `skat-app` returns plain data and structured errors; the frontend maps them to message ids. Tests check that both languages define the same ids and that every id the code uses exists. | Resolves the open point; Fluent handles parameters and plurals, and the files stay usable by a Godot frontend. |
+| D-33 | 2026-10-29 | Card faces are generated SVGs (`tools/cardgen`), committed under `assets/cards/` and embedded into the frontend at build time; `egui_extras` renders them with `resvg`. Indices are stroked paths, so no font is needed. A test fails if the committed files differ from the generator output. German faces use the indices U, O, K, A. | Resolves the open point: no pre-rasterised images, sharp at every size, no font or licence risk. |
+| D-34 | 2026-10-29 | Minimum Rust version 1.95 (supersedes 1.88), required by egui/eframe 0.37. | The frontend needs a current egui; Rust 1.95 is widely available. |
+| D-35 | 2026-10-29 | M2 opponents: one deterministic `BaselineOpponent` in `skat-ai` that only receives its seat's `PlayerView` and picks one of the listed legal actions, using the minimal shared measures in `skat-analysis`. The frontend paces opponent moves with the command `AdvanceOpponent`. | Issue #6 asks for legal, fair, reproducible opponents without strategic analysis; pacing in the frontend keeps `skat-app` free of timers. |
 
 ## D-03 Kontra/Re in detail
 
@@ -113,10 +118,26 @@ below refer to the ISkO.
    Karo with pickup, Null with pickup and Null ending early; `kontra.rs`
    covers Kontra/Re.
 
+## D-31 Series semantics
+
+1. **Players and seats:** the series has three players. In each deal the
+   dealer is Hinterhand, the player to the dealer's left Vorhand. Player 2
+   deals the first game, so the human starts as Vorhand.
+2. **Rotation:** after every deal, also a thrown-in one, the deal passes to
+   the left.
+3. **Einpassen:** if all pass, the deal is thrown in (D-04). It counts as a
+   game of the series (a line on the score sheet with no points), as in
+   tournament lists; the next player deals.
+4. **Scoring:** each line holds the Seeger-Fabian points per player as
+   computed by `skat-core` (`GameResult::seeger_fabian`, mapped from seats to
+   players) and the running totals. The series result lists totals, games
+   won and lost as declarer, and the ranking by total.
+5. **Length:** a fixed series ends after its n-th game (default 36). In free
+   play the human ends the series between games.
+6. **Seeds:** the series seed seeds a `ChaCha8Rng` that draws one seed per
+   deal; the same series seed and the same human commands repeat the series.
+
 ## Open points
 
-- i18n library (candidate: Fluent / `fluent-rs`) and SVG rendering
-  (candidate: `resvg`, or pre-rasterised PNGs) to be chosen when coding
-  starts.
 - Calibrate "strength level ↔ parameters" empirically (AI vs. AI).
 - Conceding a game (ISkO 4.3) is not yet modelled in `skat-core` (D-28.5).

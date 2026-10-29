@@ -1,7 +1,8 @@
 # Roadmap
 
-**Current status:** M1 done (`crates/skat-core`, issue #5). Next: M2 (first
-playable version).
+**Current status:** M1 done (`crates/skat-core`, issue #5). M2 (issue #6)
+is implemented; it stays open until the platform smoke tests in
+[testing.md](testing.md#platform-verification-m2) are recorded.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
