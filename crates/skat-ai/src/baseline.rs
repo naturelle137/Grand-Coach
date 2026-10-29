@@ -7,16 +7,16 @@ use skat_analysis::hand::power;
 use skat_analysis::{Knowledge, TrickState, policy};
 use skat_core::{Action, Card, GameType, Phase, PlayerView};
 
-use crate::Opponent;
-
 /// A deliberately simple, deterministic opponent: the shared continuation
 /// policy of `skat-analysis` for the decisions before card play, plus rules
 /// of thumb for the cards.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BaselineOpponent;
 
-impl Opponent for BaselineOpponent {
-    fn decide(&self, view: &PlayerView) -> Option<Action> {
+impl BaselineOpponent {
+    /// Chooses one of `view.legal_actions`; `None` if the list is empty,
+    /// i.e. it is not this seat's turn.
+    pub fn decide(&self, view: &PlayerView) -> Option<Action> {
         let legal = &view.legal_actions;
         if legal.is_empty() {
             return None;
