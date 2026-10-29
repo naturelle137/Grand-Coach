@@ -9,6 +9,7 @@ think about? Which options? How do they compare?). Focus: card counting and
 putting yourself in the opponents' shoes.
 
 ## Memory – read first
+
 - `docs/vision.md`: goals, features, scope, architecture
 - `docs/architecture.md`: design decisions inside `skat-core`
 - `docs/decisions.md`: decision log (D-xx) and open points
@@ -22,6 +23,7 @@ New fundamental decisions go into `docs/decisions.md` as a new D entry.
 Keep all documents short.
 
 ## Language
+
 - **Repository language is English**: code, comments, commit messages, docs,
   PR titles and descriptions.
 - **Chat with the user in German.**
@@ -29,11 +31,13 @@ Keep all documents short.
 - Skat terms stay German in code and docs; see `docs/glossary.md`.
 
 ## Tech stack
+
 Rust (Cargo workspace), GUI with egui. Later additionally Godot via
 godot-rust/gdext (D-11).
 
 ## Architecture (crates; only `skat-core` exists so far)
-```
+
+```text
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI
 crates/skat-analysis  card counter, opponent model, option evaluation (Monte Carlo, double-dummy)
 crates/skat-ai        opponent AI with strength levels
@@ -42,10 +46,12 @@ crates/skat-app       application interface: session, commands, events, view mod
 crates/gui-egui       egui frontend
 tools/cardgen         generates card SVGs into assets/cards/
 ```
+
 Dependencies only point downwards: core ← analysis ← ai/coach ← app ← gui.
 Translations live in `assets/i18n/`.
 
 ## Hard rules
+
 - **Coach and AI do not compute separately.** Both use `skat-analysis`; the
   coach only verbalises what was computed there.
 - **Separate information sets.** AI and coach get one player's view, never the
@@ -65,6 +71,7 @@ Translations live in `assets/i18n/`.
   no Bock.
 
 ## Build and test
+
 All checks run through one script (D-30, `docs/testing.md`):
 
 ```sh
@@ -91,12 +98,14 @@ and `cargo test --locked --offline --all-features` also pass locally.
 There is no executable or GUI target yet.
 
 ## Testing
+
 - Rule engine and analysis are test-driven; rule cases get unit tests with
   fixed deals and known positions.
 - The rule-engine milestone also requires thousands of seeded random games
   without rule violations (see `docs/roadmap.md`).
 
 ## Conventions
+
 - Branching, Conventional Commits and PRs: see `CONTRIBUTING.md` (D-17).
   Feature branches from `main`, changes only via PR. Update affected vision,
   roadmap and decision documents in the same PR.
@@ -110,9 +119,11 @@ There is no executable or GUI target yet.
   runs that skill; follow its CI notes and do not push, open the PR or edit
   the issue yourself.
 - Every source file starts with the SPDX header:
+
   ```rust
   // SPDX-License-Identifier: EUPL-1.2
   ```
+
   For scripts with `#` comments: `# SPDX-License-Identifier: EUPL-1.2`.
 - Generated or drawn content under `assets/` and `docs/` is CC BY-SA 4.0
   (`LICENSE-ASSETS`). SVG files get an `SPDX-License-Identifier: CC-BY-SA-4.0`

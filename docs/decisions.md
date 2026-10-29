@@ -36,7 +36,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-29 | 2026-10-29 | Issue implementation follows the project skill `implement-issue`, locally and in CI (the workflow only adds CI notes). Agents tick an issue's checklist items only when done and verified, never to suggest completeness; in CI the workflow applies only `[ ]` → `[x]` changes. | One procedure for all runs; the issue shows at a glance what is done. |
 | D-30 | 2026-10-29 | Verification gate: `scripts/check.sh` (tiers `lint`, `test`, `quick`, `full`, `deep`) is the single definition of the checks; linters are rustfmt, clippy, markdownlint, shellcheck and actionlint. Tests run only when code files changed. Git hooks (`.githooks/`, pre-commit `quick`, pre-push `full`) give local feedback; Claude Code hooks activate them and block bypassing. The only hard gate is the CI check `ci-ok` (always `lint`; `test` on Linux and Windows plus MSRV when code changed), required on `main`; `implement-issue.yml` dispatches CI itself and opens a draft PR on a red gate. Validation stays human: PR review and milestone playtests. Details in [testing.md](testing.md). | Hooks can be skipped and do not exist where Claude runs in GitHub Actions; only a server-side required check enforces "no failing tests on `main`" for humans and agents alike. One script avoids drift. |
 
-### D-03 Kontra/Re in detail
+## D-03 Kontra/Re in detail
 
 1. **Who may say Kontra:** each defender who has bid or held at least 18.
    Usual exception for rear hand (Hinterhand) if fore hand (Vorhand) and
@@ -54,7 +54,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
    before the cards are revealed. Unlike some pub rule profiles, Re is also
    allowed in Null and Null Hand.
 
-### D-26 Kontra/Re clarified
+## D-26 Kontra/Re clarified
 
 1. **Eligibility:** a defender may say Kontra if they bid or held at least 18.
    Rear hand (Hinterhand) may also say Kontra if, at its first turn in the
@@ -68,7 +68,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
    defender decides once whether to say Kontra, followed by the declarer's Re
    decision if needed.
 
-### D-28 Rule interpretations in `skat-core`
+## D-28 Rule interpretations in `skat-core`
 
 Sources: the Internationale Skatordnung (ISkO), Altenburg 2002 edition
 (PDF: <https://www.spielkarten.com/wp-content/uploads/2019/07/0_Skat_InternationaleSkatordnung.pdf>),

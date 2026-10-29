@@ -20,6 +20,7 @@ the opponents' shoes**.
 ## Features
 
 ### Game
+
 - Full Skat according to the **International Skat Rules (ISkO)**: bidding,
   Hand, Skat, discarding, suit games, Grand, Null (Hand/Ouvert),
   announced Schneider/Schwarz, Ouvert.
@@ -36,6 +37,7 @@ the opponents' shoes**.
 - Normal play without the coach.
 
 ### Coach
+
 - **Intervention levels**: off / on request (help button) / at important
   decisions / at every move.
 - **Presentation**: verbal explanation plus figures per option (winning
@@ -47,6 +49,7 @@ the opponents' shoes**.
   remaining trumps") so that weaknesses become visible.
 
 ### Card counting
+
 - **Counting aid** (optional): cards played, trumps still out, card points of
   both parties, opponents' known voids.
 - **In-game quiz**: the game asks now and then, e.g. "How many trumps are
@@ -55,11 +58,13 @@ the opponents' shoes**.
   full game.
 
 ### Open mode
+
 - The player sees all cards. The coach still explains only the player's
   **own** game and shows **how the opponents' hands could have been deduced in
   a closed game**: what did bidding, discards and following suit reveal?
 
 ### Presentation
+
 - Plain graphics in the style of the 90s/2000s. Card legibility comes before
   effects.
 - **Switchable card faces**: French tournament deck with four colours
@@ -89,6 +94,7 @@ gui-godot      later frontend (Godot via godot-rust/gdext)
 ```
 
 Principles:
+
 - **The coach only verbalises what the analysis has computed.** It produces
   structured data (text keys + parameters); translation happens in the
   presentation layer.

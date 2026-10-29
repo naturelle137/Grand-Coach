@@ -21,11 +21,13 @@ Keep it short; details belong in the code (`crates/skat-core`).
   `Spiel`, `Beendet`, `Eingepasst`. Kontra/Re is not a phase of its own (see
   below).
 - API shape:
+
   ```rust
   fn current_seat(&self) -> Option<Seat>;
   fn legal_actions(&self) -> Vec<Action>;
   fn apply(&mut self, action: Action) -> Result<Vec<Event>, RuleError>;
   ```
+
 - `apply` validates first and mutates only on success: a rejected action
   leaves the state unchanged. `validate` performs the same check without
   applying.
