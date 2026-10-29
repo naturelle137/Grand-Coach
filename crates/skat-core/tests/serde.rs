@@ -142,6 +142,131 @@ fn off_suit_play_in_a_completed_trick_is_rejected() {
     assert!(serde_json::from_value::<Game>(json).is_err());
 }
 
+/// Mittelhand has already played a card and then claims to have just said
+/// Kontra. D-26.2 only allows Kontra before the defender's first card.
+#[test]
+fn kontra_after_the_first_card_is_rejected() {
+    let mut game = Game::new(0, RuleConfig { kontra_re: true });
+    for action in [
+        Action::Bid(18),
+        Action::Hold,
+        Action::Pass,
+        Action::Pass,
+        Action::Hand,
+        Action::Announce(Announcement::plain(GameType::Grand)),
+    ] {
+        game.apply(action).unwrap();
+    }
+    for _ in 0..2 {
+        let card = game
+            .legal_actions()
+            .into_iter()
+            .find(|a| matches!(a, Action::Play(_)))
+            .unwrap();
+        game.apply(card).unwrap();
+    }
+    let mut json = serde_json::to_value(&game).unwrap();
+    assert!(serde_json::from_value::<Game>(json.clone()).is_ok());
+    json["kontra"] = serde_json::json!("Kontra");
+    json["kontra_by"] = serde_json::json!("Mittelhand");
+    json["step"] = serde_json::json!("AwaitRe");
+    assert!(serde_json::from_value::<Game>(json.clone()).is_err());
+    // With the Re decision already made, Kontra before Mittelhand's first card
+    // is a reachable history.
+    json["step"] = serde_json::json!("Play");
+    assert!(serde_json::from_value::<Game>(json).is_ok());
+}
+
+/// All states with the same card sequence as `start` plus `cards`, reachable
+/// by any choice of Kontra, KeinKontra, Re and KeinRe in between.
+fn kontra_variants(start: &Game, cards: &[Card], out: &mut Vec<Game>) {
+    let played = start.tricks().len() * 3 + start.current_trick().len();
+    if played == cards.len() {
+        out.push(start.clone());
+    }
+    for action in start.legal_actions() {
+        let follow = match action {
+            Action::Play(card) => cards.get(played) == Some(&card),
+            Action::Kontra | Action::KeinKontra | Action::Re | Action::KeinRe => true,
+            _ => false,
+        };
+        if follow {
+            let mut next = start.clone();
+            next.apply(action).unwrap();
+            kontra_variants(&next, cards, out);
+        }
+    }
+}
+
+/// Oracle for the Kontra/Re fields: any combination of `kontra`,
+/// `kontra_by`, `step` and `revealed` that deserialises must be a state that
+/// legal actions reach with the same cards played.
+#[test]
+fn accepted_kontra_states_are_reachable() {
+    let seats = Seat::ALL.map(|s| serde_json::to_value(s).unwrap());
+    let mut steps = vec![serde_json::json!("Play"), serde_json::json!("AwaitRe")];
+    steps.extend(
+        seats
+            .iter()
+            .map(|s| serde_json::json!({ "OuvertKontra": s })),
+    );
+    let mut kontra_by = vec![serde_json::json!(null)];
+    kontra_by.extend(seats.iter().cloned());
+    let mut checked = 0;
+    for seed in 0..60u64 {
+        let mut game = Game::new(
+            seed,
+            RuleConfig {
+                kontra_re: seed % 4 != 3,
+            },
+        );
+        let mut rng = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut start = None;
+        let mut cards = Vec::new();
+        loop {
+            if let Some(start) = &start {
+                let mut reachable = Vec::new();
+                kontra_variants(start, &cards, &mut reachable);
+                assert!(reachable.contains(&game));
+                let json = serde_json::to_value(&game).unwrap();
+                for level in ["None", "Kontra", "Re"] {
+                    for by in &kontra_by {
+                        for step in &steps {
+                            for revealed in [false, true] {
+                                let mut mutated = json.clone();
+                                mutated["kontra"] = serde_json::json!(level);
+                                mutated["kontra_by"] = by.clone();
+                                mutated["step"] = step.clone();
+                                mutated["revealed"] = serde_json::json!(revealed);
+                                if let Ok(g) = serde_json::from_value::<Game>(mutated.clone()) {
+                                    assert!(reachable.contains(&g), "{seed}: {mutated}");
+                                    checked += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let actions = game.legal_actions();
+            if actions.is_empty() {
+                break;
+            }
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            let pick = actions[(rng % actions.len() as u64) as usize];
+            game.apply(pick).unwrap();
+            match pick {
+                Action::Announce(_) => start = Some(game.clone()),
+                Action::Play(card) => cards.push(card),
+                _ => {}
+            }
+        }
+    }
+    // Sanity check that the oracle actually saw Kontra states.
+    assert!(checked > 1000, "{checked}");
+}
+
 /// Every game reached by legal actions survives the round trip. Changing any
 /// single field either is rejected or leaves a game that can still be queried
 /// without panicking.

@@ -76,6 +76,12 @@ cargo test --all-features   # includes the serde round-trip tests
 `git diff --check` and check relative links.
 Document new commands here and in `CONTRIBUTING.md` only once verified.
 
+Local Fedora 44 Distrobox setup is documented in `CONTRIBUTING.md` and was
+verified with Rust 1.99.1. `cargo fetch --locked` prepares the dependency
+cache; `cargo build --locked --offline`, `cargo test --locked --offline`
+and `cargo test --locked --offline --all-features` also pass locally.
+There is no executable or GUI target yet.
+
 ## Testing
 - Rule engine and analysis are test-driven; rule cases get unit tests with
   fixed deals and known positions.

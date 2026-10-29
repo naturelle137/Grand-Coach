@@ -270,6 +270,32 @@ fn ouvert_lost_with_one_trick_missing() {
     check(&g, false, 140, -280, [-330, 40, 40]);
 }
 
+/// Grand Hand mit 4 with Schneider announced. Vorhand gives away the first two
+/// tricks (Pik Ass, Herz Ass) and wins the other eight: 88 Augen, one short of
+/// the announced Schneider. The defence has 32 Augen, so it is not Schneider
+/// either.
+#[test]
+fn schneider_announced_but_missed_with_88_augen() {
+    let d = deal(
+        "CJ SJ HJ DJ CA CT CK CQ C9 S7",
+        "SA ST SK SQ S9 S8 C8 HA HT HK",
+        "HQ H9 H8 H7 DA DT DK DQ D9 D8",
+        "C7 D7",
+    );
+    let g = play_game(
+        d,
+        &VH_HAND,
+        schneider(GameType::Grand),
+        "S7 SA DT  HA H7 C9  HT H8 CJ  SJ HK H9  HJ SK HQ \
+         DJ SQ DK  CA C8 DQ  CT S9 DA  CK S8 D9  CQ ST D8",
+    );
+    // 24 * (4 + 1 + Hand + Schneider + Schneider angesagt) = 24 * 8, lost
+    let r = check(&g, false, 192, -384, [-434, 40, 40]);
+    assert_eq!(r.outcome.declarer_augen, 88);
+    assert_eq!(r.outcome.declarer_tricks, 8);
+    assert!(r.schneider && !r.schwarz && !r.ueberreizt);
+}
+
 // ---------------------------------------------------------------- lost Karo
 
 /// Hinterhand plays Karo ohne 4 and gets 47 Augen (see
@@ -387,7 +413,12 @@ fn null_ouvert_hand_won() {
 #[test]
 fn null_ouvert_hand_lost_ends_after_two_tricks() {
     let bidding = [Action::Bid(23), Action::Pass, Action::Pass, Action::Hand];
-    let g = play_game(standard_deal(), &bidding, null_ouvert(), "CJ S7 HQ  HJ HA H9");
+    let g = play_game(
+        standard_deal(),
+        &bidding,
+        null_ouvert(),
+        "CJ S7 HQ  HJ HA H9",
+    );
     let r = check(&g, false, 59, -118, [40, -168, 40]);
     assert_eq!(r.outcome.tricks_played, 2);
 }

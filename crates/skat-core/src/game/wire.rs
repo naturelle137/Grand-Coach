@@ -5,13 +5,13 @@
 //! sequence of legal actions from its deal can reach.
 
 use super::{CompletedTrick, Game, Phase, Step, Trick};
+use crate::RuleConfig;
 use crate::bidding::{BidOutcome, Bidding};
 use crate::card::CardSet;
 use crate::deal::Deal;
 use crate::rules::{Announcement, Contract, GameType, legal_cards, trick_winner};
 use crate::scoring::{GameResult, KontraLevel, settle};
 use crate::seat::Seat;
-use crate::RuleConfig;
 
 /// Unvalidated wire form of [`Game`].
 #[derive(serde::Deserialize)]
@@ -192,7 +192,8 @@ impl Game {
         let mut count = 0;
         let mut expected_leader = Seat::Vorhand;
         for (i, trick) in self.tricks.iter().enumerate() {
-            let winner = Seat::from_index(trick.leader.index() + trick_winner(contract.game, trick.cards));
+            let winner =
+                Seat::from_index(trick.leader.index() + trick_winner(contract.game, trick.cards));
             if trick.leader != expected_leader || trick.winner != winner {
                 return Err("trick leader or winner is wrong");
             }
@@ -210,7 +211,14 @@ impl Game {
             expected_leader = winner;
         }
         let in_trick = self.current.len();
-        if in_trick > 2 || self.current.cards.iter().take(in_trick).any(Option::is_none) {
+        if in_trick > 2
+            || self
+                .current
+                .cards
+                .iter()
+                .take(in_trick)
+                .any(Option::is_none)
+        {
             return Err("trick in progress is malformed");
         }
         let leader_ok = if in_trick == 0 {
@@ -275,6 +283,21 @@ impl Game {
             _ => return Err("Kontra state is invalid"),
         }
         let before_play = self.tricks.is_empty() && self.current.is_empty();
+        if let Some(seat) = self.kontra_by {
+            // Ouvert: Kontra only in the decision round, which ends with the
+            // reveal. Otherwise at the defender's turn before their first
+            // card, which they still have to play after the answer.
+            let timing_ok = if contract.ouvert {
+                self.step != Step::AwaitRe || !self.revealed
+            } else if self.played[seat.index()] {
+                self.step != Step::AwaitRe
+            } else {
+                self.phase == Phase::Spiel && self.next_to_play() == seat
+            };
+            if !timing_ok {
+                return Err("Kontra was said at an impossible time");
+            }
+        }
         match self.step {
             Step::Play => {}
             Step::AwaitRe => {
