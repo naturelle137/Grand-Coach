@@ -111,4 +111,5 @@ Principles:
 
 ## Decisions taken
 
-See [decisions.md](decisions.md).
+See [decisions.md](decisions.md). Design inside `skat-core`:
+[architecture.md](architecture.md).
