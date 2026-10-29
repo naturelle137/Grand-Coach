@@ -23,6 +23,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-16 | 2026-10-29 | Repository language is English: code, comments, commits, docs, PR texts. Skat terms stay German (glossary in CLAUDE.md). README is primarily German with an English section. | Open to international contributors; Skat terms are established. |
 | D-17 | 2026-10-29 | Branching: `main` plus feature branches; changes reach `main` only via pull request. Commit messages follow Conventional Commits. | Simple, sufficient for a small project; readable history. |
 | D-18 | 2026-10-29 | Code of conduct: Contributor Covenant 2.1. | Widely used standard. |
+| D-19 | 2026-10-29 | `AGENTS.md` is the single source of agent instructions; `CLAUDE.md` only imports it (`@AGENTS.md`). | Works for Codex, Claude Code and other agents; no two copies that drift apart. |
 
 ### D-03 Kontra/Re in detail
 
