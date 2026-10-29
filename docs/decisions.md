@@ -31,6 +31,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-24 | 2026-10-29 | Game value, Überreizen and Seeger-Fabian are pure functions over a finished game; series bookkeeping lives outside `skat-core`. | Scoring is testable in isolation from play. |
 | D-25 | 2026-10-29 | Public core data types derive `serde` traits behind the cargo feature `serde`. | Replays and `skat-app` can serialise them; the core stays lean without it. |
 | D-26 | 2026-10-29 | Clarifies D-03: rear-hand exception and Kontra/Re timing as encoded in the engine. Details below the table. | Issue #5 requires D-03 to be precise enough to implement and test. |
+| D-27 | 2026-10-29 | Claude may implement issues through the manually triggered workflow `implement-issue.yml`. The maintainer picks the issue; the result is a regular PR to `main` that a human reviews. No scheduled runs, no automatic issue selection, no automated review bots. Auth via the subscription OAuth token. | Offloads well-specified issues while keeping human review and D-17. |
 
 ### D-03 Kontra/Re in detail
 
