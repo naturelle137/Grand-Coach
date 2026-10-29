@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: EUPL-1.2
-name: Bug report
+name: 🐞 Bug report
 description: Something does not work as expected (wrong rule, crash, display error).
 title: "[Bug]: "
 labels: ["bug"]
@@ -22,12 +22,16 @@ body:
         1. Start a new game with seed ...
         2. Bid up to ...
         3. ...
+    validations:
+      required: true
 
   - type: input
     id: environment
     attributes:
       label: Version and system
       placeholder: Grand-Coach 0.1.0, Windows 11
+    validations:
+      required: true
 
   - type: textarea
     id: extra
