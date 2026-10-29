@@ -8,6 +8,7 @@ Hineinversetzen in den Gegner.
 ## Gedächtnis – zuerst lesen
 - `docs/vision.md`: Ziele, Features, Abgrenzung, Architektur
 - `docs/decisions.md`: Entscheidungslog (D-xx) und offene Punkte
+- `docs/roadmap.md`: Meilensteine und aktueller Stand (nach jedem Meilenstein aktualisieren)
 - `docs/third-party.md`: Herkunft und Lizenz fremder Dateien
 
 Neue Grundsatzentscheidungen kommen als neuer D-Eintrag in `docs/decisions.md`.
