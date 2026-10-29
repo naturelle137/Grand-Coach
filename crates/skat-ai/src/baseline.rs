@@ -142,6 +142,17 @@ fn announce(view: &PlayerView) -> Action {
             .max_by_key(|&g| strength(g, cards))
             .unwrap_or(GameType::Grand)
     };
+    // A Null hand without any unsafe suit is played open.
+    let ouvert = Announcement {
+        ouvert: true,
+        ..Announcement::plain(GameType::Null)
+    };
+    if game == GameType::Null
+        && null_risks(view.hand) == 0
+        && view.legal_actions.contains(&Action::Announce(ouvert))
+    {
+        return Action::Announce(ouvert);
+    }
     Action::Announce(Announcement::plain(game))
 }
 

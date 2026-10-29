@@ -10,8 +10,8 @@ use gui_egui::{Deck, GrandCoachApp, Language};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::{
-    Action, Announcement, Card, GameType, Phase, PlayerId, SeriesLength, SessionConfig, Suit,
-    TableView,
+    Action, Announcement, Card, Command, GameType, Phase, PlayerId, SeriesLength, Session,
+    SessionConfig, Suit, TableView,
 };
 
 fn harness(config: SessionConfig) -> Harness<'static, GrandCoachApp> {
@@ -416,8 +416,8 @@ fn every_decision_and_variant_is_clickable() {
     let mut wanted: Vec<String> = ["Bid", "Hold", "Pass", "Hand", "TakeSkat", "Discard", "Play"]
         .map(str::to_owned)
         .to_vec();
-    // Kontra by the human; Re/KeinRe answer an opponent's Kontra. Opponents
-    // never play Ouvert, so the human's Ouvert Kontra round cannot occur.
+    // Kontra by the human; Re/KeinRe answer an opponent's Kontra. The
+    // human's Ouvert Kontra round is rare and has its own test below.
     wanted.extend(["Kontra", "Re", "KeinRe"].map(str::to_owned));
     for family in ["Farbe", "Grand"] {
         for (s, z, o) in [
@@ -488,4 +488,69 @@ fn table_shows_phase_turn_announcements_tricks_and_sheet() {
     // After the game the result and the sheet line are visible.
     harness.get_by_label("Ergebnis");
     harness.get_by_label("Nächstes Spiel");
+}
+
+/// Finds, through `skat-app` alone, a series in which the human (holding 18
+/// in the bidding) faces an opponent's Ouvert game, and returns its config
+/// and the human's commands up to that point.
+fn ouvert_kontra_round() -> (SessionConfig, Vec<Command>) {
+    for seed in 0..400 {
+        let config = SessionConfig {
+            seed,
+            series: SeriesLength::Fixed(36),
+            kontra_re: true,
+        };
+        let mut session = Session::new(config);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut commands = Vec::new();
+        loop {
+            session.run_opponents();
+            let v = session.view();
+            if v.series_finished {
+                break;
+            }
+            if v.legal_actions.contains(&Action::KeinKontra) {
+                return (config, commands);
+            }
+            let legal = &v.legal_actions;
+            let command = match v.phase {
+                _ if legal.is_empty() => Command::NextGame,
+                Phase::Reizen if legal.contains(&Action::Hold) && v.bid <= 18 => {
+                    Command::Act(Action::Hold)
+                }
+                Phase::Reizen if legal.contains(&Action::Bid(18)) => Command::Act(Action::Bid(18)),
+                Phase::Reizen => Command::Act(Action::Pass),
+                _ => Command::Act(legal[rng.next_u32() as usize % legal.len()]),
+            };
+            session.execute(command).unwrap();
+            commands.push(command);
+        }
+    }
+    panic!("no Ouvert Kontra round for the human found");
+}
+
+#[test]
+fn kein_kontra_before_an_opponents_ouvert_game_by_click() {
+    let (config, commands) = ouvert_kontra_round();
+    let mut harness = harness(config);
+    for command in commands {
+        settle(&mut harness);
+        let v = view(&harness);
+        match command {
+            Command::Act(action) => perform(&mut harness, &v, action),
+            _ => button(&mut harness, "Nächstes Spiel"),
+        }
+    }
+    settle(&mut harness);
+    let v = view(&harness);
+    assert!(v.contract.is_some_and(|c| c.ouvert));
+    assert!(v.declarer_cards.is_none());
+    harness.get_by_role_and_label(Role::Button, "Kontra");
+    button(&mut harness, "Kein Kontra");
+    settle(&mut harness);
+    assert!(
+        view(&harness).declarer_cards.is_some(),
+        "cards not revealed"
+    );
+    harness.get_by_label("Offene Karten:");
 }

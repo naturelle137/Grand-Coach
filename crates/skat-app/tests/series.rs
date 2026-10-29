@@ -374,3 +374,45 @@ fn api_types_round_trip_as_json() {
     let json = serde_json::to_string(&error).unwrap();
     assert_eq!(serde_json::from_str::<AppError>(&json).unwrap(), error);
 }
+
+/// The human's Kontra decision before an opponent's Ouvert game is reached
+/// and answered through the application interface.
+#[test]
+fn human_decides_kontra_before_an_opponents_ouvert_game() {
+    for seed in 0..400 {
+        let mut session = Session::new(config(seed, SeriesLength::Fixed(36), true));
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        for _ in 0..10_000 {
+            session.run_opponents();
+            let view = session.view();
+            if view.series_finished {
+                break;
+            }
+            if view.legal_actions.contains(&Action::KeinKontra) {
+                assert!(view.contract.is_some_and(|c| c.ouvert));
+                assert_ne!(view.declarer, Some(PlayerId::HUMAN));
+                assert!(view.declarer_cards.is_none(), "revealed before Kontra");
+                session.execute(Command::Act(Action::KeinKontra)).unwrap();
+                session.run_opponents();
+                assert!(session.view().declarer_cards.is_some());
+                return;
+            }
+            // Bid or hold 18 so the human may say Kontra (D-26), then pass.
+            let command = if view.phase == Phase::Reizen && view.acting == Some(PlayerId::HUMAN) {
+                let legal = &view.legal_actions;
+                let action = if legal.contains(&Action::Hold) && view.bid <= 18 {
+                    Action::Hold
+                } else if legal.contains(&Action::Bid(18)) {
+                    Action::Bid(18)
+                } else {
+                    Action::Pass
+                };
+                Command::Act(action)
+            } else {
+                human_command(&session, &mut rng)
+            };
+            session.execute(command).unwrap();
+        }
+    }
+    panic!("no Ouvert Kontra round for the human found");
+}
