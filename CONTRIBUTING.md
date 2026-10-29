@@ -14,7 +14,7 @@ Thanks for your interest in contributing!
 ## Language
 
 The repository language is English (code, comments, commits, docs, PRs).
-Skat terms stay German; the glossary is in [CLAUDE.md](CLAUDE.md#glossary-german-skat-term--english-meaning).
+Skat terms stay German; see the [glossary](docs/glossary.md).
 
 ## Development setup
 
