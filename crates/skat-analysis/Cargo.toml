@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: EUPL-1.2
+[package]
+name = "skat-analysis"
+description = "Shared analysis for Grand-Coach opponents and coach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+skat-core.workspace = true
+
+[lints]
+workspace = true

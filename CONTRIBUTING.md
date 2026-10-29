@@ -18,17 +18,34 @@ Skat terms stay German; see the [glossary](docs/glossary.md).
 
 ## Development setup
 
-Install Rust stable (minimum 1.88) via [rustup](https://rustup.rs), including
+Install Rust stable (minimum 1.95) via [rustup](https://rustup.rs), including
 the `rustfmt` and `clippy` components, and a native linker.
 Alternatively, in a Fedora Distrobox, install the distribution packages
-(verified on Fedora 44 with Rust 1.99.1):
+(verified on Fedora 44 with Rust 1.99.1). The second line adds the
+libraries the game window needs at runtime (EGL/OpenGL and Wayland):
 
 ```sh
 sudo dnf install -y rust cargo rustfmt clippy gcc
+sudo dnf install -y mesa-libEGL mesa-libGL libwayland-egl libxkbcommon
 ```
 
-Only the rule-engine library exists so far; there is no GUI or `cargo run`
-target yet. Run it locally through its tests. All checks are bundled in
+On Windows 11, install Rust with rustup and the Visual Studio C++ Build
+Tools (MSVC linker); the Windows build is checked in CI but has not yet
+been tried interactively (see [docs/testing.md](docs/testing.md#platform-verification-m2)).
+
+Start the game (binary `grand-coach` of `crates/gui-egui`, verified on
+Linux):
+
+```sh
+cargo run --locked --release -p gui-egui
+```
+
+The status line shows the series seed; `GRAND_COACH_SEED=<n>` starts that
+series again. The card faces in `assets/cards/` are generated; after
+changing `tools/cardgen`, run `cargo run --locked -p cardgen` and commit
+the result (a test compares them).
+
+All checks are bundled in
 one script; activate the git hooks once per clone so it runs automatically
 (`quick` before each commit, full gate before each push):
 
@@ -46,7 +63,9 @@ must pass before a PR can be merged. Details: [docs/testing.md](docs/testing.md)
 Use `cargo fetch --locked` to download the locked dependencies in advance.
 Build and test commands can then use `--locked --offline`, for example
 `cargo test --locked --offline --all-features`. The test suite includes
-10,000 seeded games and their deterministic replays.
+10,000 seeded games and their deterministic replays, complete seeded
+series through `skat-app` and headless GUI tests that play series by
+clicks.
 
 New Rust
 dependencies must have a compatible licence and be listed in

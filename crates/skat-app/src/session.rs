@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: EUPL-1.2
+
+//! The session: one series of games between the human and two opponents.
+
+use rand_chacha::ChaCha8Rng;
+use rand_chacha::rand_core::{Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
+use skat_ai::{BaselineOpponent, Opponent};
+use skat_core::{Action, Event, Game, Phase, RuleConfig, RuleError, Seat};
+
+use crate::series::{GameRecord, ScoreSheet, SeriesResult};
+use crate::view::{TableView, build_view};
+
+/// A player of the series. Player 0 is the human; players 1 and 2 are the
+/// opponents, 1 sitting to the human's left (plays next), 2 to the right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct PlayerId(pub u8);
+
+impl PlayerId {
+    /// The human player.
+    pub const HUMAN: PlayerId = PlayerId(0);
+    /// All players in clockwise order.
+    pub const ALL: [PlayerId; 3] = [PlayerId(0), PlayerId(1), PlayerId(2)];
+
+    /// Index `0..3`.
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// The next player clockwise (to the left).
+    pub const fn next(self) -> PlayerId {
+        PlayerId((self.0 + 1) % 3)
+    }
+
+    /// `true` for the human player.
+    pub const fn is_human(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Seat of this player in a deal by `dealer` (the dealer is Hinterhand,
+    /// the player to the dealer's left Vorhand).
+    pub const fn seat(self, dealer: PlayerId) -> Seat {
+        Seat::from_index((self.0 as usize + 5 - dealer.0 as usize) % 3)
+    }
+
+    /// Player on `seat` in a deal by `dealer`.
+    pub const fn on_seat(seat: Seat, dealer: PlayerId) -> PlayerId {
+        PlayerId(((dealer.0 as usize + 1 + seat.index()) % 3) as u8)
+    }
+}
+
+/// Length of a series (D-05).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SeriesLength {
+    /// A fixed number of games, thrown-in deals included (D-31).
+    Fixed(u16),
+    /// Free play: the human ends the series between games.
+    Free,
+}
+
+/// Settings of a new session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionConfig {
+    /// Seed of the series; it fixes every deal (D-06, D-22).
+    pub seed: u64,
+    /// Series length.
+    pub series: SeriesLength,
+    /// Kontra/Re (D-03).
+    pub kontra_re: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> SessionConfig {
+        SessionConfig {
+            seed: 0,
+            series: SeriesLength::Fixed(36),
+            kontra_re: false,
+        }
+    }
+}
+
+/// What a frontend asks the session to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Command {
+    /// A game action of the human player.
+    Act(Action),
+    /// Let the opponent whose turn it is make one move. Frontends call this
+    /// at their own pace so the human can follow the opponents' moves.
+    AdvanceOpponent,
+    /// Deal the next game of the series.
+    NextGame,
+    /// End a free-play series between games.
+    EndSeries,
+}
+
+/// What happened. Contains only information the human may see.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AppEvent {
+    /// A new game was dealt.
+    GameStarted {
+        /// Game number in the series, from 1.
+        number: u32,
+        /// Dealer.
+        dealer: PlayerId,
+    },
+    /// A game event from the rule engine (public information only). Its
+    /// seats map to players through [`TableView::players`].
+    Game {
+        /// The event.
+        event: Event,
+        /// Player who acted or is named in the event, if any.
+        player: Option<PlayerId>,
+    },
+    /// The game was finished or thrown in and entered on the score sheet.
+    GameRecorded {
+        /// The new line of the score sheet.
+        record: GameRecord,
+    },
+    /// The series is over.
+    SeriesFinished {
+        /// Number of games played.
+        games: u32,
+    },
+}
+
+/// Why a command was rejected. The session is unchanged after an error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AppError {
+    /// The rule engine rejected the action.
+    Rule(RuleError),
+    /// It is an opponent's turn.
+    NotYourTurn,
+    /// It is not an opponent's turn.
+    NoOpponentToMove,
+    /// The current game is not over yet.
+    GameInProgress,
+    /// The series is over; start a new session.
+    SeriesFinished,
+    /// Only a free-play series can be ended by the player.
+    NotFreePlay,
+}
+
+/// A running series. All randomness comes from the configured seed, so the
+/// same seed and the same human commands give the same series.
+#[derive(Clone, Debug)]
+pub struct Session {
+    config: SessionConfig,
+    /// Source of the per-deal seeds.
+    rng: ChaCha8Rng,
+    opponent: BaselineOpponent,
+    pub(crate) game: Game,
+    game_seed: u64,
+    number: u32,
+    pub(crate) dealer: PlayerId,
+    sheet: ScoreSheet,
+    finished: bool,
+}
+
+impl Session {
+    /// Starts a series and deals its first game. In the first game the
+    /// human is Vorhand (player 2 deals).
+    pub fn new(config: SessionConfig) -> Session {
+        let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
+        let game_seed = rng.next_u64();
+        Session {
+            config,
+            rng,
+            opponent: BaselineOpponent,
+            game: Game::new(game_seed, rule_config(config)),
+            game_seed,
+            number: 1,
+            dealer: PlayerId(2),
+            sheet: ScoreSheet::default(),
+            finished: matches!(config.series, SeriesLength::Fixed(0)),
+        }
+    }
+
+    /// Settings of this session.
+    pub fn config(&self) -> SessionConfig {
+        self.config
+    }
+
+    /// Seed of the current deal (for "same deal again", D-06).
+    pub fn game_seed(&self) -> u64 {
+        self.game_seed
+    }
+
+    /// The human's view of the table.
+    pub fn view(&self) -> TableView {
+        let human_seat = PlayerId::HUMAN.seat(self.dealer);
+        build_view(
+            &self.config,
+            self.number,
+            self.dealer,
+            &self.sheet,
+            self.finished,
+            self.opponent_to_move(),
+            &self.game.view(human_seat),
+        )
+    }
+
+    /// `true` if an opponent has to act.
+    pub fn opponent_to_move(&self) -> bool {
+        !self.finished
+            && self
+                .game
+                .current_seat()
+                .is_some_and(|s| !PlayerId::on_seat(s, self.dealer).is_human())
+    }
+
+    /// Runs opponent moves until the human has to act or the game is over.
+    pub fn run_opponents(&mut self) -> Vec<AppEvent> {
+        let mut events = Vec::new();
+        while self.opponent_to_move() {
+            events.extend(
+                self.execute(Command::AdvanceOpponent)
+                    .expect("opponent can move"),
+            );
+        }
+        events
+    }
+
+    /// Executes a command. On error nothing changes.
+    pub fn execute(&mut self, command: Command) -> Result<Vec<AppEvent>, AppError> {
+        if self.finished {
+            return Err(AppError::SeriesFinished);
+        }
+        match command {
+            Command::Act(action) => {
+                let seat = self.game.current_seat();
+                if seat.is_some_and(|s| !PlayerId::on_seat(s, self.dealer).is_human()) {
+                    return Err(AppError::NotYourTurn);
+                }
+                self.apply(action)
+            }
+            Command::AdvanceOpponent => {
+                if !self.opponent_to_move() {
+                    return Err(AppError::NoOpponentToMove);
+                }
+                let seat = self.game.current_seat().expect("opponent to move");
+                // The opponent sees only its own seat's view (D-23).
+                let action = self
+                    .opponent
+                    .decide(&self.game.view(seat))
+                    .expect("an opponent always finds a legal action");
+                self.apply(action)
+            }
+            Command::NextGame => {
+                self.ensure_game_over()?;
+                Ok(self.next_game())
+            }
+            Command::EndSeries => {
+                if self.config.series != SeriesLength::Free {
+                    return Err(AppError::NotFreePlay);
+                }
+                self.ensure_game_over()?;
+                self.finished = true;
+                Ok(vec![AppEvent::SeriesFinished {
+                    games: self.sheet.records.len() as u32,
+                }])
+            }
+        }
+    }
+
+    fn ensure_game_over(&self) -> Result<(), AppError> {
+        if self.game.current_seat().is_some() {
+            Err(AppError::GameInProgress)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn apply(&mut self, action: Action) -> Result<Vec<AppEvent>, AppError> {
+        let core_events = self.game.apply(action).map_err(AppError::Rule)?;
+        let mut events: Vec<AppEvent> = core_events
+            .into_iter()
+            .map(|event| AppEvent::Game {
+                event,
+                player: event_seat(&event).map(|s| PlayerId::on_seat(s, self.dealer)),
+            })
+            .collect();
+        if matches!(self.game.phase(), Phase::Beendet | Phase::Eingepasst) {
+            events.extend(self.record_game());
+        }
+        Ok(events)
+    }
+
+    fn record_game(&mut self) -> Vec<AppEvent> {
+        let dealer = self.dealer;
+        let result = self.game.result().copied();
+        let mut points = [0; 3];
+        if let Some(result) = result {
+            let by_seat = result.seeger_fabian();
+            for seat in Seat::ALL {
+                points[PlayerId::on_seat(seat, dealer).index()] = by_seat[seat.index()];
+            }
+        }
+        let record = self.sheet.push(GameRecord {
+            number: self.number,
+            dealer,
+            declarer: self.game.declarer().map(|s| PlayerId::on_seat(s, dealer)),
+            contract: self.game.contract(),
+            bid: if result.is_some() { self.game.bid() } else { 0 },
+            result,
+            points,
+            totals: [0; 3],
+        });
+        let mut events = vec![AppEvent::GameRecorded { record }];
+        if let SeriesLength::Fixed(n) = self.config.series
+            && self.sheet.records.len() >= usize::from(n)
+        {
+            self.finished = true;
+            events.push(AppEvent::SeriesFinished {
+                games: self.sheet.records.len() as u32,
+            });
+        }
+        events
+    }
+
+    fn next_game(&mut self) -> Vec<AppEvent> {
+        self.number += 1;
+        self.dealer = self.dealer.next();
+        self.game_seed = self.rng.next_u64();
+        self.game = Game::new(self.game_seed, rule_config(self.config));
+        vec![AppEvent::GameStarted {
+            number: self.number,
+            dealer: self.dealer,
+        }]
+    }
+
+    /// Score sheet so far.
+    pub fn sheet(&self) -> &ScoreSheet {
+        &self.sheet
+    }
+
+    /// Result of the series once it is over.
+    pub fn series_result(&self) -> Option<SeriesResult> {
+        self.finished.then(|| self.sheet.result())
+    }
+}
+
+fn rule_config(config: SessionConfig) -> RuleConfig {
+    RuleConfig {
+        kontra_re: config.kontra_re,
+    }
+}
+
+/// Seat named in a core event, if any.
+fn event_seat(event: &Event) -> Option<Seat> {
+    match *event {
+        Event::Bid { seat, .. }
+        | Event::Held { seat, .. }
+        | Event::Passed { seat }
+        | Event::Kontra { seat }
+        | Event::KeinKontra { seat }
+        | Event::Re { seat }
+        | Event::KeinRe { seat }
+        | Event::CardPlayed { seat, .. } => Some(seat),
+        Event::BiddingWon { declarer, .. }
+        | Event::HandChosen { declarer }
+        | Event::SkatTaken { declarer }
+        | Event::Discarded { declarer }
+        | Event::Announced { declarer, .. }
+        | Event::Revealed { declarer, .. } => Some(declarer),
+        Event::TrickWon { trick } => Some(trick.winner),
+        Event::GameFinished { result } => Some(result.outcome.declarer),
+        Event::Eingepasst => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seats_rotate_with_the_dealer() {
+        for dealer in PlayerId::ALL {
+            assert_eq!(dealer.seat(dealer), Seat::Hinterhand);
+            assert_eq!(dealer.next().seat(dealer), Seat::Vorhand);
+            for player in PlayerId::ALL {
+                assert_eq!(PlayerId::on_seat(player.seat(dealer), dealer), player);
+            }
+        }
+        assert_eq!(PlayerId::HUMAN.seat(PlayerId(2)), Seat::Vorhand);
+    }
+}

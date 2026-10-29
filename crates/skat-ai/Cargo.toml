@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: EUPL-1.2
+[package]
+name = "skat-ai"
+description = "Opponent AI for Grand-Coach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+skat-core.workspace = true
+skat-analysis.workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true
+
+[lints]
+workspace = true

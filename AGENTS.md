@@ -35,7 +35,7 @@ Keep all documents short.
 Rust (Cargo workspace), GUI with egui. Later additionally Godot via
 godot-rust/gdext (D-11).
 
-## Architecture (crates; only `skat-core` exists so far)
+## Architecture (crates; `skat-coach` follows in M5)
 
 ```text
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI
@@ -95,7 +95,20 @@ Local Fedora 44 Distrobox setup is documented in `CONTRIBUTING.md` and was
 verified with Rust 1.99.1. `cargo fetch --locked` prepares the dependency
 cache; `cargo build --locked --offline`, `cargo test --locked --offline`
 and `cargo test --locked --offline --all-features` also pass locally.
-There is no executable or GUI target yet.
+
+The desktop app is the binary `grand-coach` of `crates/gui-egui`
+(verified on Linux/Wayland; Windows 11 not yet, see `docs/testing.md`):
+
+```sh
+cargo run --locked --release -p gui-egui      # start the game
+GRAND_COACH_SEED=42 cargo run -p gui-egui     # replay a series seed
+cargo run --locked -p cardgen                 # regenerate assets/cards/
+```
+
+On Linux the window needs EGL/GL and Wayland or X11 client libraries
+(Fedora: `mesa-libEGL mesa-libGL libwayland-egl libxkbcommon`). After
+changing `tools/cardgen`, regenerate and commit `assets/cards/`; a test
+fails otherwise.
 
 ## Testing
 

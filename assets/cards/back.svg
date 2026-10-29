@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+<rect x="2" y="2" width="196" height="296" rx="12" fill="#ffffff" stroke="#333" stroke-width="2"/>
+<defs><pattern id="lattice" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#24489a"/><path d="M0,8 L8,0 L16,8 L8,16 Z" fill="none" stroke="#9fb4e8" stroke-width="1.5"/></pattern></defs>
+<rect x="12" y="12" width="176" height="276" rx="6" fill="url(#lattice)" stroke="#24489a" stroke-width="2"/>
+<rect x="60" y="110" width="80" height="80" rx="10" fill="#24489a" stroke="#9fb4e8" stroke-width="3"/>
+<g transform="translate(74,132) scale(0.6)"><path d="M36,10 C30,2 6,0 4,30 C6,60 34,60 36,40 V32 H22" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(100.4,132) scale(0.6)"><path d="M36,10 C30,2 6,0 4,30 C6,60 34,60 36,50" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>
