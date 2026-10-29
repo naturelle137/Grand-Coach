@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: EUPL-1.2
+[package]
+name = "skat-app"
+description = "Frontend-independent application interface of Grand-Coach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+skat-core = { workspace = true, features = ["serde"] }
+skat-ai.workspace = true
+rand_chacha.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
