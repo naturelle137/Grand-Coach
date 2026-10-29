@@ -6,6 +6,8 @@ members = [
     "crates/skat-analysis",
     "crates/skat-ai",
     "crates/skat-app",
+    "crates/gui-egui",
+    "tools/cardgen",
 ]
 
 [workspace.package]
