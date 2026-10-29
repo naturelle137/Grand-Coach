@@ -1,0 +1,59 @@
+# Contributing to Grand-Coach
+
+Thanks for your interest in contributing!
+
+## Before you start
+
+- Read the [Code of Conduct](CODE_OF_CONDUCT.md). It applies to all
+  participation.
+- Get an overview: [docs/vision.md](docs/vision.md) (goals and architecture),
+  [docs/roadmap.md](docs/roadmap.md) (where the project stands) and
+  [docs/decisions.md](docs/decisions.md) (what has already been decided).
+- For larger changes, please open an issue first so we can discuss the idea.
+
+## Language
+
+The repository language is English (code, comments, commits, docs, PRs).
+Skat terms stay German; see the [glossary](docs/glossary.md).
+
+## Development setup
+
+*To be defined once there is code.*
+
+## Branching
+
+- `main` is the only long-lived branch.
+- Work on a feature branch created from `main`, e.g. `feat/bidding-values`
+  or `fix/null-ouvert-scoring`.
+- Changes reach `main` only through a pull request; no direct pushes.
+
+## Commit messages
+
+We use [Conventional Commits](https://www.conventionalcommits.org/):
+`type(scope): description`, scope optional.
+
+| Type | Use for |
+|------|---------|
+| `feat` | a new feature |
+| `fix` | a bug fix |
+| `docs` | documentation only |
+| `style` | formatting, no logic change |
+| `refactor` | code change that neither fixes a bug nor adds a feature |
+| `test` | adding or correcting tests |
+| `chore` | build, tooling, dependencies, repository maintenance |
+
+Example: `docs: add roadmap with milestones`
+
+## Pull requests
+
+- Keep PRs small and focused; review your own diff first.
+- Describe what changes and why; reference issues where they exist.
+- If a change affects a decision, the vision or the roadmap, update the
+  matching file in `docs/` in the same PR.
+
+## Licences
+
+By contributing you agree that code is licensed under the EUPL-1.2 and other
+content under CC BY-SA 4.0; see the licence section of the
+[README](README.md#licence) for the details, including SPDX headers and
+third-party files.
