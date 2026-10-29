@@ -7,7 +7,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_core::{CardSet, Seat};
 
-use crate::{Command, PlayerId, SeriesLength, Session, SessionConfig, TableView};
+use crate::{Command, Level, PlayerId, SeriesLength, Session, SessionConfig, TableView};
 
 /// Every card the view shows.
 fn shown_cards(view: &TableView) -> CardSet {
@@ -49,6 +49,7 @@ fn human_view_never_shows_hidden_cards() {
             seed,
             series: SeriesLength::Fixed(12),
             kontra_re: true,
+            opponents: [Level::Easy; 2],
         });
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         while !session.view().series_finished {

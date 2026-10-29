@@ -26,6 +26,17 @@ series-seed = Seed:
 button-start = Start
 button-cancel = Cancel
 
+## Opponents
+
+opponent-left = Left opponent:
+opponent-right = Right opponent:
+level-easy = Easy
+level-medium = Medium
+level-strong = Strong
+level-easy-description = Easy: plays by simple rules of thumb and does not calculate ahead.
+level-medium-description = Medium: works through a few possible card distributions for card play and Kontra/Re; bids, discards and announces by rules of thumb.
+level-strong-description = Strong: like Medium, but works through four times as many possible card distributions. The strongest level; thinks a little longer.
+
 ## Status line
 
 status-game = Game { $number } of { $total }
@@ -35,6 +46,7 @@ status-turn = To move: { $player }
 status-bid = Bid: { $value }
 status-declarer = Declarer: { $player }
 status-seed = Seed { $seed }
+status-levels = Opponents: { $left } (left), { $right } (right)
 status-waiting = { $player } is thinking …
 
 ## Players and seats
@@ -145,6 +157,7 @@ series-rank = { $rank }. { $player }: { $total } points ({ $won } won, { $lost }
 
 error-not-your-turn = It is not your turn.
 error-no-opponent-to-move = No opponent is to move.
+error-stale-opponent-move = The opponent move no longer fits the current position.
 error-game-in-progress = The current game is not over yet.
 error-series-finished = The series is over. Start a new series.
 error-not-free-play = Only a free-play series can be ended early.

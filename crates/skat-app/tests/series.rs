@@ -9,8 +9,8 @@ use std::collections::BTreeSet;
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::{
-    Action, AppError, AppEvent, Command, GameType, KontraLevel, Phase, PlayerId, RuleError,
-    SeriesLength, Session, SessionConfig,
+    Action, AppError, AppEvent, Cancel, Command, GameType, KontraLevel, Level, Phase, PlayerId,
+    RuleError, SeriesLength, Session, SessionConfig,
 };
 
 fn config(seed: u64, series: SeriesLength, kontra_re: bool) -> SessionConfig {
@@ -18,6 +18,7 @@ fn config(seed: u64, series: SeriesLength, kontra_re: bool) -> SessionConfig {
         seed,
         series,
         kontra_re,
+        opponents: [Level::Easy; 2],
     }
 }
 
@@ -373,6 +374,94 @@ fn api_types_round_trip_as_json() {
     let error = AppError::Rule(RuleError::InvalidDiscard);
     let json = serde_json::to_string(&error).unwrap();
     assert_eq!(serde_json::from_str::<AppError>(&json).unwrap(), error);
+    let config = SessionConfig {
+        opponents: [Level::Strong, Level::Easy],
+        ..config(3, SeriesLength::Free, true)
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    assert_eq!(
+        serde_json::from_str::<SessionConfig>(&json).unwrap(),
+        config
+    );
+}
+
+#[test]
+fn each_opponent_has_its_own_level() {
+    let config = SessionConfig {
+        opponents: [Level::Easy, Level::Strong],
+        ..config(4, SeriesLength::Fixed(1), false)
+    };
+    assert_eq!(config.level(PlayerId::HUMAN), None);
+    assert_eq!(config.level(PlayerId(1)), Some(Level::Easy));
+    assert_eq!(config.level(PlayerId(2)), Some(Level::Strong));
+    let session = Session::new(config);
+    assert_eq!(
+        session.view().config.opponents,
+        [Level::Easy, Level::Strong]
+    );
+    // Human is Vorhand in game 1: player 1 (Mittelhand) bids first.
+    let job = session.opponent_job().expect("opponent to move");
+    assert_eq!(job.player(), PlayerId(1));
+    assert_eq!(job.level(), Level::Easy);
+    assert_eq!(SessionConfig::default().opponents, [Level::Medium; 2]);
+}
+
+/// Background moves: the same move as `AdvanceOpponent`; a move computed
+/// for an earlier position is rejected without change.
+#[test]
+fn opponent_jobs_match_advance_and_reject_stale_moves() {
+    for seed in 0..3 {
+        let config = SessionConfig {
+            opponents: [Level::Medium, Level::Easy],
+            ..config(seed, SeriesLength::Fixed(2), true)
+        };
+        let mut a = Session::new(config);
+        let mut b = Session::new(config);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        while !a.view().series_finished {
+            if let Some(job) = a.opponent_job() {
+                let mv = job.run(None);
+                let thread = std::thread::spawn(move || job.run(Some(&Cancel::new())));
+                assert_eq!(thread.join().unwrap(), mv);
+                let events = a.finish_opponent(mv).unwrap();
+                assert_eq!(b.execute(Command::AdvanceOpponent).unwrap(), events);
+                let before = a.view();
+                assert!(matches!(
+                    a.finish_opponent(mv),
+                    Err(AppError::StaleOpponentMove
+                        | AppError::NoOpponentToMove
+                        | AppError::SeriesFinished)
+                ));
+                assert_eq!(a.view(), before);
+                continue;
+            }
+            let command = human_command(&a, &mut rng);
+            assert_eq!(a.execute(command), b.execute(command));
+        }
+        assert_eq!(a.view(), b.view());
+    }
+}
+
+/// A cancelled opponent still moves legally (rules-of-thumb fallback).
+#[test]
+fn cancelled_opponents_still_play_legally() {
+    let config = SessionConfig {
+        opponents: [Level::Strong, Level::Strong],
+        ..config(6, SeriesLength::Fixed(2), true)
+    };
+    let mut session = Session::new(config);
+    let mut rng = ChaCha8Rng::seed_from_u64(6);
+    let cancel = Cancel::new();
+    cancel.cancel();
+    while !session.view().series_finished {
+        if let Some(job) = session.opponent_job() {
+            session.finish_opponent(job.run(Some(&cancel))).unwrap();
+        } else {
+            let command = human_command(&session, &mut rng);
+            session.execute(command).unwrap();
+        }
+    }
+    assert_eq!(session.view().sheet.records.len(), 2);
 }
 
 /// The human's Kontra decision before an opponent's Ouvert game is reached

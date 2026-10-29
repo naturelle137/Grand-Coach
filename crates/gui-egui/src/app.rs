@@ -4,9 +4,12 @@
 //! clicks into [`Command`]s. No game logic here.
 
 use eframe::egui::{self, Color32, RichText, Vec2};
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use skat_app::{
-    Action, Announcement, AppError, AppEvent, Card, CardSet, Command, Event, GameType, Phase,
-    PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit, TableView, reizwerte,
+    Action, Announcement, AppError, AppEvent, Cancel, Card, CardSet, Command, Event, GameType,
+    Level, OpponentMove, Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit,
+    TableView, reizwerte,
 };
 
 use crate::cards::{self, Deck};
@@ -23,7 +26,21 @@ struct NewSeries {
     free: bool,
     games: u16,
     kontra_re: bool,
+    opponents: [Level; 2],
     seed: String,
+}
+
+/// An opponent decision computed on a background thread. Dropping it
+/// cancels the computation (new series).
+struct Thinking {
+    result: Receiver<OpponentMove>,
+    cancel: Cancel,
+}
+
+impl Drop for Thinking {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 /// The Grand-Coach window.
@@ -41,6 +58,10 @@ pub struct GrandCoachApp {
     /// Seconds between two opponent moves; tests set 0.
     pub opponent_delay: f64,
     next_move_at: f64,
+    /// Opponent decision being computed.
+    thinking: Option<Thinking>,
+    /// Computed opponent move waiting for its turn to be shown.
+    ready: Option<OpponentMove>,
     /// Until when the last completed trick stays in the middle.
     show_trick_until: f64,
     new_series: Option<NewSeries>,
@@ -60,6 +81,8 @@ impl GrandCoachApp {
             error: None,
             opponent_delay: 0.8,
             next_move_at: 0.0,
+            thinking: None,
+            ready: None,
             show_trick_until: 0.0,
             new_series: None,
         }
@@ -82,7 +105,12 @@ impl GrandCoachApp {
 
     /// Sends a command to the session and keeps a rejection for display.
     fn send(&mut self, command: Command, now: f64) {
-        match self.session.execute(command) {
+        let result = self.session.execute(command);
+        self.handle(result, now);
+    }
+
+    fn handle(&mut self, result: Result<Vec<AppEvent>, AppError>, now: f64) {
+        match result {
             Ok(events) => {
                 self.error = None;
                 let trick_done = events.iter().any(|e| {
@@ -120,15 +148,46 @@ impl GrandCoachApp {
         self.send(Command::Act(action), now);
     }
 
-    /// Lets the opponents move at a readable pace.
+    /// Lets the opponents move at a readable pace. Each decision is
+    /// computed on a background thread, so the window stays responsive
+    /// while an opponent thinks; it starts at once and overlaps the pause.
     fn drive_opponents(&mut self, ctx: &egui::Context, now: f64) {
         if !self.session.opponent_to_move() {
+            self.thinking = None;
+            self.ready = None;
             return;
         }
-        if now >= self.next_move_at {
-            self.send(Command::AdvanceOpponent, now);
+        if self.thinking.is_none()
+            && self.ready.is_none()
+            && let Some(job) = self.session.opponent_job()
+        {
+            let (sender, result) = std::sync::mpsc::channel();
+            let cancel = Cancel::new();
+            let (stop, repaint) = (cancel.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                // The receiver is gone if the series was replaced meanwhile.
+                let _ = sender.send(job.run(Some(&stop)));
+                repaint.request_repaint();
+            });
+            self.thinking = Some(Thinking { result, cancel });
         }
-        let wait = (self.next_move_at - now).max(0.0);
+        if let Some(thinking) = &self.thinking {
+            match thinking.result.try_recv() {
+                Ok(mv) => {
+                    self.ready = Some(mv);
+                    self.thinking = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.thinking = None,
+            }
+        }
+        if now >= self.next_move_at
+            && let Some(mv) = self.ready.take()
+        {
+            let result = self.session.finish_opponent(mv);
+            self.handle(result, now);
+        }
+        let wait = (self.next_move_at - now).clamp(0.0, 0.05);
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
     }
 
@@ -191,6 +250,7 @@ impl GrandCoachApp {
             free,
             games,
             kontra_re: config.kontra_re,
+            opponents: config.opponents,
             seed: config.seed.wrapping_add(1).to_string(),
         });
     }
@@ -247,6 +307,14 @@ impl GrandCoachApp {
                         .strong(),
                 );
             }
+            ui.separator();
+            ui.label(i.tf(
+                "status-levels",
+                &[
+                    ("left", i.t(level_message(view.config.opponents[0])).into()),
+                    ("right", i.t(level_message(view.config.opponents[1])).into()),
+                ],
+            ));
             ui.separator();
             ui.label(i.tf(
                 "status-seed",
@@ -733,6 +801,30 @@ impl GrandCoachApp {
                 );
                 ui.radio_value(&mut draft.free, true, self.t("series-free"));
                 ui.checkbox(&mut draft.kontra_re, self.t("option-kontra-re"));
+                ui.separator();
+                for (k, id) in ["opponent-left", "opponent-right"].into_iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(self.t(id));
+                        for level in Level::ALL {
+                            let label = self.t(level_message(level));
+                            ui.radio_value(&mut draft.opponents[k], level, label)
+                                .on_hover_text(self.t(level_description(level)));
+                        }
+                    });
+                }
+                ui.label(
+                    RichText::new(self.t(level_description(draft.opponents[0])))
+                        .small()
+                        .weak(),
+                );
+                if draft.opponents[1] != draft.opponents[0] {
+                    ui.label(
+                        RichText::new(self.t(level_description(draft.opponents[1])))
+                            .small()
+                            .weak(),
+                    );
+                }
+                ui.separator();
                 ui.horizontal(|ui| {
                     ui.label(self.t("series-seed"));
                     ui.text_edit_singleline(&mut draft.seed);
@@ -758,7 +850,10 @@ impl GrandCoachApp {
                     SeriesLength::Fixed(draft.games)
                 },
                 kontra_re: draft.kontra_re,
+                opponents: draft.opponents,
             });
+            self.thinking = None;
+            self.ready = None;
             self.error = None;
             self.selected = CardSet::EMPTY;
             self.next_move_at = now + self.opponent_delay;
@@ -768,6 +863,24 @@ impl GrandCoachApp {
         } else {
             self.new_series = Some(draft);
         }
+    }
+}
+
+/// Message id of a strength level's name.
+fn level_message(level: Level) -> &'static str {
+    match level {
+        Level::Easy => "level-easy",
+        Level::Medium => "level-medium",
+        Level::Strong => "level-strong",
+    }
+}
+
+/// Message id of a strength level's description.
+fn level_description(level: Level) -> &'static str {
+    match level {
+        Level::Easy => "level-easy-description",
+        Level::Medium => "level-medium-description",
+        Level::Strong => "level-strong-description",
     }
 }
 

@@ -168,6 +168,7 @@ pub fn error(i18n: &I18n, error: AppError) -> String {
         AppError::Rule(rule) => rule_error(i18n, rule),
         AppError::NotYourTurn => i18n.t("error-not-your-turn"),
         AppError::NoOpponentToMove => i18n.t("error-no-opponent-to-move"),
+        AppError::StaleOpponentMove => i18n.t("error-stale-opponent-move"),
         AppError::GameInProgress => i18n.t("error-game-in-progress"),
         AppError::SeriesFinished => i18n.t("error-series-finished"),
         AppError::NotFreePlay => i18n.t("error-not-free-play"),

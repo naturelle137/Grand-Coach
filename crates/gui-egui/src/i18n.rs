@@ -169,7 +169,7 @@ mod tests {
                 for name in [
                     "number", "total", "player", "value", "seed", "cards", "tricks", "suit",
                     "rank", "augen", "game", "count", "bid", "score", "points", "games", "won",
-                    "lost", "phase", "current", "card",
+                    "lost", "phase", "current", "card", "left", "right",
                 ] {
                     args.set(name, "x");
                 }
