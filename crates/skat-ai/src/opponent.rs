@@ -1,29 +1,34 @@
 // SPDX-License-Identifier: EUPL-1.2
 
-//! Opponents with strength levels (M4, D-07, D-40).
+//! Opponents with strength levels (M4, D-07, D-40, D-41).
 //!
-//! A level is a [`Profile`]: how much analysis effort the opponent spends
-//! and how much it deviates from the best option. Every strategic number
-//! comes from [`skat_analysis::analyze`]; this module only picks one of the
-//! analysed options. The weakest level plays by the shared rules of thumb
-//! ([`BaselineOpponent`]) without search.
+//! A level is a [`Profile`]: how much analysis effort the opponent spends,
+//! how much it deviates from the best option, how well it remembers played
+//! cards and which mistakes it makes. Every strategic number comes from
+//! `skat-analysis`; this module only picks one of the analysed options or
+//! follows the shared rules of thumb ([`BaselineOpponent`]).
 //!
 //! Information boundary: [`Opponent::decide`] takes one seat's
 //! [`PlayerView`] and nothing else (D-23). Its randomness comes from the
 //! opponent's own seed and the view, never from the deal seed, so the same
-//! view, seed and profile give the same decision.
+//! view, seed and profile give the same decision. The only opponent with
+//! full knowledge is [`crate::Mephisto`].
 
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
-use skat_analysis::{Analysis, Budget, Cancel, Estimate, Status, analyze};
-use skat_core::{Action, KontraLevel, Phase, PlayerView};
+use skat_analysis::{Analysis, Budget, Cancel, Estimate, Status, analyze_forgetful};
+use skat_core::{Action, CardSet, KontraLevel, Phase, PlayerView};
 
 use crate::BaselineOpponent;
+use crate::rookie::{self, Mistakes};
 
-/// Strength level of an opponent, from weakest to strongest.
+/// Strength level of an opponent, from weakest to strongest. Goldfish and
+/// Mephisto are table modes, not levels (`skat-app`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Level {
+    /// Rules of thumb with seeded mistakes.
+    Rookie,
     /// Rules of thumb without search.
     Easy,
     /// Analysed card play and Kontra/Re with a small budget.
@@ -35,31 +40,26 @@ pub enum Level {
 
 impl Level {
     /// All levels from weakest to strongest.
-    pub const ALL: [Level; 3] = [Level::Easy, Level::Medium, Level::Strong];
+    pub const ALL: [Level; 4] = [Level::Rookie, Level::Easy, Level::Medium, Level::Strong];
 
     /// The documented profile of this level (`docs/ai.md`).
     pub const fn profile(self) -> Profile {
         match self {
-            Level::Easy => Profile {
-                budget: None,
-                temperature: 0.0,
-                search_bidding: false,
-                search_declaring: false,
+            Level::Rookie => Profile {
+                mistakes: Profile::ROOKIE_MISTAKES,
+                ..Profile::RULES
             },
+            Level::Easy => Profile::RULES,
             Level::Medium => Profile {
                 budget: Some(Budget {
                     samples: 6,
                     nodes_per_task: Budget::INTERACTIVE.nodes_per_task,
                 }),
-                temperature: 0.0,
-                search_bidding: false,
-                search_declaring: false,
+                ..Profile::RULES
             },
             Level::Strong => Profile {
                 budget: Some(Budget::INTERACTIVE),
-                temperature: 0.0,
-                search_bidding: false,
-                search_declaring: false,
+                ..Profile::RULES
             },
         }
     }
@@ -83,6 +83,42 @@ pub struct Profile {
     /// announcement; otherwise the rules of thumb do. Card play and
     /// Kontra/Re are always analysed when there is a budget.
     pub search_declaring: bool,
+    /// Probability that a card of a completed trick other than the last
+    /// one is forgotten in an analysed card-play decision (it is then
+    /// believed to be still out, `skat_analysis::analyze_forgetful`).
+    pub forget: f64,
+    /// Seeded deviations from the rules of thumb (decisions the analysis
+    /// does not take).
+    pub mistakes: Mistakes,
+}
+
+impl Profile {
+    /// Plain rules of thumb (level Easy).
+    pub const RULES: Profile = Profile {
+        budget: None,
+        temperature: 0.0,
+        search_bidding: false,
+        search_declaring: false,
+        forget: 0.0,
+        mistakes: Mistakes::NONE,
+    };
+
+    /// Mistakes of level Rookie.
+    pub const ROOKIE_MISTAKES: Mistakes = Mistakes {
+        bid: 0.35,
+        game: 0.4,
+        discard: 0.2,
+        kontra: 0.15,
+        card: 0.12,
+    };
+
+    /// The forgetful opponent of the Goldfish table mode: Strong, but every
+    /// card of an older trick is forgotten with probability 1/2.
+    pub const GOLDFISH: Profile = Profile {
+        budget: Some(Budget::INTERACTIVE),
+        forget: 0.5,
+        ..Profile::RULES
+    };
 }
 
 /// An automated player with a profile and its own seed.
@@ -90,8 +126,8 @@ pub struct Profile {
 pub struct Opponent {
     /// How the opponent decides.
     pub profile: Profile,
-    /// Seed of the opponent's randomness (sampling and selection). It must
-    /// not be derived from the deal seed.
+    /// Seed of the opponent's randomness (sampling, selection, forgetting
+    /// and mistakes). It must not be derived from the deal seed.
     pub seed: u64,
 }
 
@@ -123,7 +159,12 @@ impl Opponent {
     /// (M3 semantics): the choice then uses the distributions finished so
     /// far, or falls back to the rules of thumb if there are none.
     pub fn decide(&self, view: &PlayerView, cancel: Option<&Cancel>) -> Option<Decision> {
-        let rules = BaselineOpponent.decide(view)?;
+        let mut rules = BaselineOpponent.decide(view)?;
+        if !self.profile.mistakes.is_none() {
+            let game_seed = mix(mix(self.seed, u64::from(view.hand.bits())), 7);
+            let seed = mix(decision_seed(self.seed, view), 3);
+            rules = rookie::decide(view, rules, &self.profile.mistakes, game_seed, seed);
+        }
         let Some((budget, seed)) = self.analysis_input(view) else {
             return Some(Decision {
                 action: rules,
@@ -131,7 +172,8 @@ impl Opponent {
                 fallback: false,
             });
         };
-        let Ok(analysis) = analyze(view, budget, seed, cancel) else {
+        let forgotten = self.forgotten(view);
+        let Ok(analysis) = analyze_forgetful(view, forgotten, budget, seed, cancel) else {
             return Some(Decision {
                 action: rules,
                 status: None,
@@ -139,28 +181,17 @@ impl Opponent {
             });
         };
         let mut rng = ChaCha8Rng::seed_from_u64(mix(seed, 2));
-        Some(
-            match select(view, &analysis, rules, self.profile.temperature, &mut rng) {
-                Some(action) => Decision {
-                    action,
-                    status: Some(analysis.status),
-                    fallback: false,
-                },
-                None => Decision {
-                    action: rules,
-                    status: Some(analysis.status),
-                    fallback: true,
-                },
-            },
-        )
+        Some(decision(
+            select(view, &analysis, rules, self.profile.temperature, &mut rng),
+            rules,
+            analysis.status,
+        ))
     }
-}
 
-impl Opponent {
-    /// Budget and sampling seed the opponent passes to
-    /// [`analyze`] together with `view`, or `None` if it decides by the rules
-    /// of thumb. Both depend only on the profile, the opponent's seed and
-    /// the view.
+    /// Budget and sampling seed the opponent passes to the analysis
+    /// together with `view` (and [`Opponent::forgotten`]), or `None` if it
+    /// decides by the rules of thumb. Both depend only on the profile, the
+    /// opponent's seed and the view.
     pub fn analysis_input(&self, view: &PlayerView) -> Option<(Budget, u64)> {
         if view.legal_actions.is_empty() {
             return None;
@@ -173,6 +204,46 @@ impl Opponent {
         let budget = self.profile.budget.filter(|_| searched)?;
         Some((budget, mix(decision_seed(self.seed, view), 1)))
     }
+
+    /// Played cards the opponent does not remember in this decision: each
+    /// card of a completed trick before the last one, with probability
+    /// [`Profile::forget`]. Empty outside card play.
+    pub fn forgotten(&self, view: &PlayerView) -> CardSet {
+        let mut out = CardSet::EMPTY;
+        if self.profile.forget <= 0.0 || view.phase != Phase::Spiel || view.tricks.len() < 2 {
+            return out;
+        }
+        let mut rng = ChaCha8Rng::seed_from_u64(mix(decision_seed(self.seed, view), 4));
+        for trick in &view.tricks[..view.tricks.len() - 1] {
+            for &card in &trick.cards {
+                if unit(&mut rng) < self.profile.forget {
+                    out.insert(card);
+                }
+            }
+        }
+        out
+    }
+}
+
+/// The decision for a selected option, or the rules' fallback.
+pub(crate) fn decision(selected: Option<Action>, rules: Action, status: Status) -> Decision {
+    match selected {
+        Some(action) => Decision {
+            action,
+            status: Some(status),
+            fallback: false,
+        },
+        None => Decision {
+            action: rules,
+            status: Some(status),
+            fallback: true,
+        },
+    }
+}
+
+/// Uniform number in [0, 1).
+fn unit(rng: &mut ChaCha8Rng) -> f64 {
+    (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// What an option is worth to the deciding seat: its own expected
@@ -197,7 +268,7 @@ const RULES_BONUS: f64 = 0.5;
 /// distributions compete (after Drücken screening, the kept ones), so a
 /// lucky estimate from few distributions cannot win. `None` if no option
 /// has an estimate.
-fn select(
+pub(crate) fn select(
     view: &PlayerView,
     analysis: &Analysis,
     rules: Action,
@@ -235,8 +306,7 @@ fn select(
         .map(|&(_, u)| ((u - best) / temperature).exp())
         .collect();
     let total: f64 = weights.iter().sum();
-    // 53 random bits give a uniform number in [0, 1).
-    let mut x = (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64 * total;
+    let mut x = unit(rng) * total;
     for (&(action, _), w) in candidates.iter().zip(&weights) {
         if x < *w {
             return Some(action);
@@ -277,7 +347,7 @@ fn decision_seed(seed: u64, view: &PlayerView) -> u64 {
 }
 
 /// Mixes `value` into `hash` (SplitMix64 finaliser).
-fn mix(hash: u64, value: u64) -> u64 {
+pub(crate) fn mix(hash: u64, value: u64) -> u64 {
     let mut z = hash ^ value.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);

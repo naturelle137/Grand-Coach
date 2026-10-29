@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: EUPL-1.2
 
-//! Decision latency of every strength level per decision phase, on the
-//! benchmark positions of `skat-analysis` (`docs/analysis.md`): seeded
+//! Decision latency of every strength level, the Goldfish and Mephisto per
+//! decision phase, on the benchmark positions of `skat-analysis`
+//! (`docs/analysis.md`): seeded
 //! games 1, 2, … with Kontra/Re in which the rules of thumb decide before
 //! card play and the first legal card is played; the first positions of
 //! each kind.
@@ -14,7 +15,7 @@
 
 use std::time::{Duration, Instant};
 
-use skat_ai::{BaselineOpponent, Level, Opponent, Status};
+use skat_ai::{BaselineOpponent, Level, Mephisto, Opponent, Profile, Status};
 use skat_core::{Action, Game, Phase, PlayerView, RuleConfig};
 
 const KINDS: [&str; 8] = [
@@ -73,7 +74,7 @@ fn main() {
         .nth(1)
         .and_then(|a| a.parse().ok())
         .unwrap_or(10);
-    let mut positions: Vec<Vec<PlayerView>> = vec![Vec::new(); KINDS.len()];
+    let mut positions: Vec<Vec<Game>> = vec![Vec::new(); KINDS.len()];
     let mut seed = 0;
     while positions.iter().any(|p| p.len() < per_kind) && seed < 10_000 {
         seed += 1;
@@ -84,7 +85,7 @@ fn main() {
                 && positions[k].len() < per_kind
                 && !(k == 0 && view.bidding.len() > 1)
             {
-                positions[k].push(view.clone());
+                positions[k].push(game.clone());
             }
             game.apply(advance(&view)).unwrap();
         }
@@ -93,14 +94,27 @@ fn main() {
     println!();
     println!("| Level | Decision | Median | p90 | Max | Incomplete |");
     println!("|---|---|---|---|---|---|");
-    for level in Level::ALL {
-        let opponent = Opponent::new(level, 1);
-        for (k, views) in positions.iter().enumerate() {
+    let mut players: Vec<(String, Option<Opponent>)> = Level::ALL
+        .map(|level| (format!("{level:?}"), Some(Opponent::new(level, 1))))
+        .to_vec();
+    let goldfish = Opponent {
+        profile: Profile::GOLDFISH,
+        seed: 1,
+    };
+    players.push(("Goldfish".to_owned(), Some(goldfish)));
+    players.push(("Mephisto".to_owned(), None));
+    for (name, opponent) in &players {
+        for (k, games) in positions.iter().enumerate() {
             let mut times = Vec::new();
             let mut incomplete = 0;
-            for view in views {
+            for game in games {
+                let view = game.view(game.current_seat().expect("a decision"));
                 let start = Instant::now();
-                let d = opponent.decide(view, None).expect("a decision");
+                let d = match opponent {
+                    Some(o) => o.decide(&view, None),
+                    None => Mephisto.decide(game, None),
+                }
+                .expect("a decision");
                 times.push(start.elapsed());
                 if d.fallback || d.status.is_some_and(|s| s != Status::Complete) {
                     incomplete += 1;
@@ -108,7 +122,7 @@ fn main() {
             }
             times.sort();
             println!(
-                "| {level:?} | {} | {:.3} s | {:.3} s | {:.3} s | {incomplete} |",
+                "| {name} | {} | {:.3} s | {:.3} s | {:.3} s | {incomplete} |",
                 KINDS[k],
                 percentile(&times, 0.5).as_secs_f64(),
                 percentile(&times, 0.9).as_secs_f64(),

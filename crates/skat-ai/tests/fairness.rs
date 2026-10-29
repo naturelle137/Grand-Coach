@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: EUPL-1.2
 
-//! Fairness and coverage of every strength level (M4):
+//! Fairness and coverage of every strength level and of the Goldfish
+//! (M4; Mephisto sees every card by design and is tested in `variants.rs`):
 //!
 //! - changing the concealed cards while the deciding seat's view stays the
 //!   same leaves the analysis inputs and the decision unchanged, including
@@ -12,7 +13,7 @@ use std::collections::BTreeSet;
 
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
-use skat_ai::{BaselineOpponent, Level, Opponent};
+use skat_ai::{BaselineOpponent, Level, Opponent, Profile};
 use skat_core::{Action, Card, CardSet, Deal, Game, Phase, PlayerView, RuleConfig, Seat};
 
 const RULES: RuleConfig = RuleConfig { kontra_re: true };
@@ -121,9 +122,8 @@ fn alternatives(
     out
 }
 
-/// Whether `level` analyses this decision (`docs/ai.md`).
-fn searched(level: Level, view: &PlayerView) -> bool {
-    let p = level.profile();
+/// Whether `p` analyses this decision (`docs/ai.md`).
+fn searched(p: Profile, view: &PlayerView) -> bool {
     p.budget.is_some()
         && match view.phase {
             Phase::Reizen => p.search_bidding,
@@ -168,6 +168,11 @@ const KINDS: [&str; 10] = [
 /// Checks one level on the first decision of every kind in seeded steered
 /// games (`per_kind` positions per kind, `alts` alternative deals each).
 fn check_level(level: Level, per_kind: usize, alts: usize) {
+    check_profile(&format!("{level:?}"), level.profile(), per_kind, alts);
+}
+
+/// Like [`check_level`] for any profile.
+fn check_profile(level: &str, profile: Profile, per_kind: usize, alts: usize) {
     let mut done: std::collections::BTreeMap<&str, usize> = Default::default();
     let mut swapped = BTreeSet::new();
     for seed in 0..400 {
@@ -188,7 +193,10 @@ fn check_level(level: Level, per_kind: usize, alts: usize) {
                 continue;
             }
             *count += 1;
-            let opponent = Opponent::new(level, seed.wrapping_mul(7919) ^ 0x5eed);
+            let opponent = Opponent {
+                profile,
+                seed: seed.wrapping_mul(7919) ^ 0x5eed,
+            };
             let decision = opponent.decide(&view, None).unwrap();
             assert!(
                 view.legal_actions.contains(&decision.action),
@@ -199,13 +207,15 @@ fn check_level(level: Level, per_kind: usize, alts: usize) {
             // inputs give equal results (deterministic, tested in
             // skat-analysis), so equal inputs and decisions are checked.
             let input = opponent.analysis_input(&view);
-            assert_eq!(input.is_some(), searched(level, &view), "{level:?} {k}");
+            assert_eq!(input.is_some(), searched(profile, &view), "{level:?} {k}");
+            let forgotten = opponent.forgotten(&view);
             for (alt, alt_actions) in alternatives(deal, &actions[..n], seat, alts) {
                 let other = replay(alt, &alt_actions).unwrap();
                 assert_ne!(concealed(&other), concealed(&game));
                 let alt_view = other.view(seat);
                 assert_eq!(alt_view, view);
                 assert_eq!(opponent.analysis_input(&alt_view), input);
+                assert_eq!(opponent.forgotten(&alt_view), forgotten);
                 assert_eq!(
                     opponent.decide(&alt_view, None),
                     Some(decision),
@@ -229,6 +239,16 @@ fn check_level(level: Level, per_kind: usize, alts: usize) {
     ] {
         assert!(swapped.contains(k), "{level:?}: never swapped at {k}");
     }
+}
+
+#[test]
+fn rookie_is_fair_and_covers_every_phase() {
+    check_level(Level::Rookie, 6, 3);
+}
+
+#[test]
+fn goldfish_is_fair_and_covers_every_phase() {
+    check_profile("Goldfish", Profile::GOLDFISH, 1, 1);
 }
 
 #[test]

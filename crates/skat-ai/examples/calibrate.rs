@@ -11,7 +11,7 @@
 //! Arguments: suite (`tuning` or `validation`), profile A, profile B,
 //! number of deals (default 100), parallel deals (default 4), index of the
 //! first deal in the suite (default 0). A profile is
-//! a level (`easy`, `medium`, `strong`) or a custom profile `s<samples>t<temperature>`
+//! a level (`rookie`, `easy`, `medium`, `strong`, or `goldfish`) or a custom profile `s<samples>t<temperature>`
 //! for tuning, e.g. `s6t4` (suffix `p`: analysis in card
 //! play and Kontra/Re only; `d`: also Hand, Drücken and announcement). Kontra/Re is on.
 //!
@@ -38,7 +38,9 @@ const AI_KEY: u64 = 0x6f70_706f_6e65;
 
 fn profile(spec: &str) -> Profile {
     match spec {
+        "rookie" => Level::Rookie.profile(),
         "easy" => Level::Easy.profile(),
+        "goldfish" => Profile::GOLDFISH,
         "medium" => Level::Medium.profile(),
         "strong" => Level::Strong.profile(),
         custom => {
@@ -63,6 +65,7 @@ fn profile(spec: &str) -> Profile {
                 temperature: temperature.parse().expect("temperature"),
                 search_bidding: bidding,
                 search_declaring: declaring,
+                ..Profile::RULES
             }
         }
     }
@@ -77,12 +80,14 @@ fn mix(hash: u64, value: u64) -> u64 {
 
 fn describe(p: &Profile) -> String {
     match p.budget {
+        None if !p.mistakes.is_none() => format!("rules of thumb with mistakes {:?}", p.mistakes),
         None => "rules of thumb".to_string(),
         Some(b) => format!(
-            "{} samples, {} nodes/task, temperature {}, {}",
+            "{} samples, {} nodes/task, temperature {}, forget {}, {}",
             b.samples,
             b.nodes_per_task,
             p.temperature,
+            p.forget,
             match (p.search_bidding, p.search_declaring) {
                 (true, _) => "analysis in every phase",
                 (false, true) => "analysis in every phase but bidding",

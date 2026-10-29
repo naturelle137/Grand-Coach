@@ -11,19 +11,32 @@ const RULES: RuleConfig = RuleConfig { kontra_re: true };
 
 #[test]
 fn profiles_are_ordered_as_documented() {
-    assert_eq!(Level::ALL, [Level::Easy, Level::Medium, Level::Strong]);
-    assert!(Level::Easy < Level::Medium && Level::Medium < Level::Strong);
+    assert_eq!(
+        Level::ALL,
+        [Level::Rookie, Level::Easy, Level::Medium, Level::Strong]
+    );
+    assert!(Level::ALL.windows(2).all(|w| w[0] < w[1]));
     assert_eq!(Level::default(), Level::Medium);
-    let [easy, medium, strong] = Level::ALL.map(Level::profile);
+    let [rookie, easy, medium, strong] = Level::ALL.map(Level::profile);
+    assert_eq!(easy, Profile::RULES);
+    assert_eq!(rookie.budget, None);
+    assert!(!rookie.mistakes.is_none());
     assert_eq!(easy.budget, None);
     let medium_budget = medium.budget.expect("Medium searches");
     assert_eq!(medium_budget.samples, 6);
     assert!(!medium.search_bidding && !medium.search_declaring);
     assert_eq!(strong.budget, Some(Budget::INTERACTIVE));
     assert!(!strong.search_bidding && !strong.search_declaring);
-    for p in [easy, medium, strong] {
+    for p in [rookie, easy, medium, strong] {
         assert!(p.temperature >= 0.0);
+        assert_eq!(p.forget, 0.0);
     }
+    for p in [easy, medium, strong] {
+        assert!(p.mistakes.is_none());
+    }
+    let goldfish = Profile::GOLDFISH;
+    assert_eq!(goldfish.budget, strong.budget);
+    assert!(goldfish.forget > 0.0 && goldfish.mistakes.is_none());
 }
 
 /// The first card-play position of seed `seed` (rules of thumb before).
@@ -108,6 +121,7 @@ fn an_exhausted_budget_falls_back_to_a_legal_action() {
         temperature: 0.0,
         search_bidding: true,
         search_declaring: true,
+        ..Profile::RULES
     };
     let opponent = Opponent {
         profile: tiny,
