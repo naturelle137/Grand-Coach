@@ -78,7 +78,7 @@ series to the score sheet, switch language and card faces.
 | Platform | Build | Launch | Interactive smoke test |
 |----------|-------|--------|------------------------|
 | Linux (Fedora 44 Distrobox, Wayland, Rust 1.99.1) | ✅ `cargo build --locked --release -p gui-egui`, 2026-10-29 | ✅ window opens and renders the first deal (`GRAND_COACH_SCREENSHOT`), 2026-10-29 | ❌ not yet by a person; headless click-through only (`gui-egui/tests/gui.rs`) |
-| Windows 11 | CI job `test (windows-latest)` builds and tests the frontend | ❌ not verified | ❌ not verified |
+| Windows | ✅ CI job `test (windows-latest)` (Windows Server) builds everything and passes all tests, including the headless GUI tests, 2026-10-29 | ❌ not verified on Windows 11 | ❌ not verified on Windows 11 |
 
 ## Verification vs. validation
 
