@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: EUPL-1.2
+[workspace]
+resolver = "3"
+members = ["crates/skat-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "EUPL-1.2"
+repository = "https://github.com/naturelle137/grand-coach"
+publish = false
+
+[workspace.dependencies]
+rand_chacha = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+# The seeded random-game test plays 10,000 games; light optimisation keeps
+# `cargo test` fast while staying debuggable.
+[profile.test]
+opt-level = 1

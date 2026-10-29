@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: EUPL-1.2
+[package]
+name = "skat-core"
+description = "Deterministic Skat rule engine (ISkO) for Grand-Coach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+rand_chacha.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+rand_chacha.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
