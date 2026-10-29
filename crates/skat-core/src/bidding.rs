@@ -179,7 +179,6 @@ impl Bidding {
 
     /// Rebuilds the bidding from a call history, checking every call against
     /// the bidding rules. `None` if a call is out of turn or not allowed.
-    #[cfg(feature = "serde")]
     pub(crate) fn replay(history: &[BidRecord]) -> Option<(Bidding, BidOutcome)> {
         let mut bidding = Bidding::new();
         let mut outcome = BidOutcome::Continue;
@@ -219,6 +218,13 @@ impl Bidding {
         self.bid_or_held[seat.index()]
             || (seat == Seat::Hinterhand && self.hinterhand_passed_above_18)
     }
+}
+
+/// Kontra eligibility per D-26.1, derived from a public bidding history:
+/// `true` if `seat` may say Kontra as a defender. `false` for an invalid
+/// history. Lets analysis predict Kontra without the game state.
+pub fn kontra_eligible(history: &[BidRecord], seat: Seat) -> bool {
+    Bidding::replay(history).is_some_and(|(bidding, _)| bidding.kontra_eligible(seat))
 }
 
 #[cfg(test)]
