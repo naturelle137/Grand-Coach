@@ -33,9 +33,10 @@ Issue number: `$ARGUMENTS`. If it is missing, ask for it (in CI, stop).
 
 ## 3. Verify
 
-Run every command under "Build and test" in `AGENTS.md` (once
-`Cargo.toml` exists) plus `git diff --check main`. Fix everything you
-introduced. Do not finish with failing checks.
+Run `scripts/check.sh` (the full gate, see `docs/testing.md`) plus
+`git diff --check main`. Fix everything you introduced. Do not finish with
+failing checks, and never bypass the git hooks or weaken a check or test
+to get green.
 
 ## 4. Assess the checklist honestly
 

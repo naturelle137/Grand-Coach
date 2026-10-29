@@ -28,23 +28,27 @@ sudo dnf install -y rust cargo rustfmt clippy gcc
 ```
 
 Only the rule-engine library exists so far; there is no GUI or `cargo run`
-target yet. Run it locally through its tests. From the repository root,
-run before every pull request:
+target yet. Run it locally through its tests. All checks are bundled in
+one script; activate the git hooks once per clone so it runs automatically
+(`quick` before each commit, full gate before each push):
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-cargo test --all-features
+git config core.hooksPath .githooks
+scripts/check.sh          # full gate, as in CI
 ```
+
+Tests only run when code files changed; docs-only changes are linted
+(including markdownlint). For the linters locally:
+`sudo dnf install nodejs ShellCheck`; missing ones are skipped with a
+warning. CI runs the same gate on every pull request; its check `ci-ok`
+must pass before a PR can be merged. Details: [docs/testing.md](docs/testing.md).
 
 Use `cargo fetch --locked` to download the locked dependencies in advance.
 Build and test commands can then use `--locked --offline`, for example
 `cargo test --locked --offline --all-features`. The test suite includes
 10,000 seeded games and their deterministic replays.
 
-For documentation-only changes, `git diff --check` is enough. New Rust
+New Rust
 dependencies must have a compatible licence and be listed in
 [docs/third-party.md](docs/third-party.md).
 
@@ -88,7 +92,8 @@ branch `claude/issue-<n>` and opens a regular PR to `main`, which is reviewed
 like any other PR. The procedure is the skill
 `.claude/skills/implement-issue/SKILL.md`; the workflow ticks the issue's
 checklist items the agent verified as done and accepts no other change to
-the issue text (D-29). Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
+the issue text (D-29). It runs the full gate before opening the PR (draft if
+red) and starts CI for it (D-30). Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
 (created with `claude setup-token`).
 
 ## Licences

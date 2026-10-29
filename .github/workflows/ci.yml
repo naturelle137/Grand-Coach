@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: EUPL-1.2
+name: CI
+
+# Verification gate (D-30, docs/testing.md). `ci-ok` is the single required
+# status check on `main`. The jobs only call `scripts/check.sh`, so hooks,
+# agents and CI run the same checks. `lint` always runs; compiling and
+# testing only when code files changed (no `paths:` filter, so `ci-ok` is
+# always reported).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Also dispatched by implement-issue.yml: PRs opened with GITHUB_TOKEN do
+  # not trigger `pull_request` runs.
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: 'Also run the deep random-game soak'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 3 * * 1' # weekly deep run, Monday 03:23 UTC
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CHECK_STRICT: '1'
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          # PR: its base; push: the previous tip; otherwise nothing (test all).
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] ||
+              scripts/check.sh code-changed "$BASE"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # Node (for npx markdownlint-cli2) and shellcheck are preinstalled.
+      - run: scripts/check.sh lint
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Check out exactly the committed bytes (LF) on Windows, too.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check.sh test
+        shell: bash
+
+  # The declared `rust-version` must stay true.
+  msrv:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88'
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --workspace --all-targets --all-features
+
+  deep:
+    if: github.event_name == 'schedule' || inputs.deep
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check.sh deep
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, lint, test, msrv]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          CHANGES: ${{ needs.changes.result }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          MSRV: ${{ needs.msrv.result }}
+        run: |
+          echo "changes=$CHANGES (code=$CODE) lint=$LINT test=$TEST msrv=$MSRV"
+          [ "$CHANGES" = success ] && [ "$LINT" = success ] || exit 1
+          if [ "$CODE" = true ]; then
+            [ "$TEST" = success ] && [ "$MSRV" = success ]
+          fi

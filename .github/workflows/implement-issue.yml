@@ -37,6 +37,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: write # dispatch CI for the PR (D-30)
   id-token: write # required by anthropics/claude-code-action (OIDC)
 
 jobs:
@@ -97,6 +98,8 @@ jobs:
         run: |
           git config user.name 'grand-coach-bot'
           git config user.email 'grand-coach-bot@users.noreply.github.com'
+          # The agent's commits pass the pre-commit gate (D-30).
+          git config core.hooksPath .githooks
           git switch -c "$BRANCH"
           echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
@@ -144,6 +147,8 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_PAT || secrets.GITHUB_TOKEN }}
+          HAS_PAT: ${{ secrets.AUTOMATION_PAT != '' }}
+          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AGENT_OUTCOME: ${{ steps.claude.outcome }}
         run: |
           set -euo pipefail
@@ -158,7 +163,17 @@ jobs:
           # be allowed to push; re-establish auth with GH_TOKEN.
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
           gh auth setup-git
-          git push --set-upstream origin "$BRANCH"
+
+          # Full verification gate (D-30), taken from the base commit so the
+          # agent's branch cannot weaken it. A red gate still pushes (partial
+          # work survives) but opens a draft PR; CI blocks the merge anyway.
+          GATE="passed"
+          if git cat-file -e "$BASE_SHA:scripts/check.sh" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/check.sh" > "$RUNNER_TEMP/check.sh"
+            bash "$RUNNER_TEMP/check.sh" full --base "$BASE_SHA" || GATE="failed"
+          fi
+          # The gate just ran; skip the pre-push hook.
+          git push --no-verify --set-upstream origin "$BRANCH"
 
           TITLE_FILE="$RUNNER_TEMP/pr-title.txt"
           BODY_FILE="$RUNNER_TEMP/pr-body.md"
@@ -171,13 +186,30 @@ jobs:
             printf 'Refs #%s\n\nClaude did not write a PR description; treat this as work in progress.\n' \
               "$ISSUE" > "$BODY_FILE"
           fi
+          DRAFT=()
+          if [ "$GATE" != "passed" ]; then
+            DRAFT=(--draft)
+            # Backticks are Markdown here, not command substitution.
+            # shellcheck disable=SC2016
+            printf '\n> ❌ **Verification gate failed** (`scripts/check.sh full`); see the [workflow run](%s/%s/actions/runs/%s). Opened as draft.\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$BODY_FILE"
+          fi
           if [ "$AGENT_OUTCOME" != "success" ]; then
+            # Backticks are Markdown here, not command substitution.
+            # shellcheck disable=SC2016
             printf '\n> ⚠️ **Partial work**: the agent did not report success (outcome: `%s`, often the turn budget). Check the diff for completeness.\n' \
               "$AGENT_OUTCOME" >> "$BODY_FILE"
           fi
 
-          PR_URL=$(gh pr create --base main --head "$BRANCH" \
+          PR_URL=$(gh pr create --base main --head "$BRANCH" "${DRAFT[@]}" \
             --title "$TITLE" --body-file "$BODY_FILE")
+
+          # Without a PAT the PR triggers no `pull_request` run, so start the
+          # required CI explicitly (workflow_dispatch is allowed for
+          # GITHUB_TOKEN); its checks attach to the branch head.
+          if [ "$HAS_PAT" != "true" ]; then
+            GH_TOKEN="$BOT_TOKEN" gh workflow run ci.yml --ref "$BRANCH"
+          fi
 
           # Tick the checklist items the agent judged done. Merged onto the
           # current body, so edits made meanwhile survive and the agent can
@@ -204,4 +236,4 @@ jobs:
           fi
 
           gh issue comment "$ISSUE" --body \
-            "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`; $CHECKS)."
+            "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`; gate $GATE; $CHECKS)."

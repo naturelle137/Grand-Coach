@@ -30,3 +30,14 @@ All are used unchanged from crates.io; versions are pinned in `Cargo.lock`.
 | `unicode-ident` | via `proc-macro2`, `syn` | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `serde_json`, `itoa`, `zmij` | tests only | MIT OR Apache-2.0 (`zmij`: MIT) |
 | `memchr` | tests only, via `serde_json` | Unlicense OR MIT |
+
+## Development tools
+
+Run by `scripts/check.sh` and CI only; not part of the repository or of
+any build output.
+
+| Tool | Purpose | Licence |
+|------|---------|---------|
+| [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) 0.23.3 (via `npx`) | Markdown linting | MIT |
+| [actionlint](https://github.com/rhysd/actionlint) 1.7.12 | GitHub workflow linting | MIT |
+| [ShellCheck](https://github.com/koalaman/shellcheck) | shell script linting | GPL-3.0 |
