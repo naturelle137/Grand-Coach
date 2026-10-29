@@ -33,6 +33,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-26 | 2026-10-29 | Clarifies D-03: rear-hand exception and Kontra/Re timing as encoded in the engine. Details below the table. | Issue #5 requires D-03 to be precise enough to implement and test. |
 | D-27 | 2026-10-29 | Claude may implement issues through the manually triggered workflow `implement-issue.yml`. The maintainer picks the issue; the result is a regular PR to `main` that a human reviews. No scheduled runs, no automatic issue selection, no automated review bots. Auth via the subscription OAuth token. | Offloads well-specified issues while keeping human review and D-17. |
 | D-28 | 2026-10-29 | Rule interpretations encoded in `skat-core` for M1, with the ISkO sources used. Details below the table. | Issue #5 requires ambiguities to be resolved and documented rather than invented silently. |
+| D-29 | 2026-10-29 | Issue implementation follows the project skill `implement-issue`, locally and in CI (the workflow only adds CI notes). Agents tick an issue's checklist items only when done and verified, never to suggest completeness; in CI the workflow applies only `[ ]` → `[x]` changes. | One procedure for all runs; the issue shows at a glance what is done. |
 
 ### D-03 Kontra/Re in detail
 

@@ -110,34 +110,26 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # API billing instead of the subscription:
           #   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The procedure lives in the project skill
+          # `.claude/skills/implement-issue/SKILL.md`; only CI specifics here.
           prompt: |
-            Implement GitHub issue #${{ inputs.issue }} of this repository completely.
-            Read it first with `gh issue view ${{ inputs.issue }} --comments`.
+            /implement-issue ${{ inputs.issue }}
 
-            You are running unattended in CI on branch claude/issue-${{ inputs.issue }}.
-            Nobody can answer questions; make reasonable decisions and document them.
-
-            Rules:
-            1. `AGENTS.md` and the documents it lists are authoritative: hard
-               rules, SPDX headers, English repository language, new D entries
-               in `docs/decisions.md`, affected docs updated in the same change.
-            2. Commit your work with Conventional Commits (see CONTRIBUTING.md).
-               End every commit message with
-               `Co-Authored-By: Claude <noreply@anthropic.com>`.
-            3. Verify before finishing. If `Cargo.toml` exists, run
-               `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
-               and `cargo test`. Always run `git diff --check main`.
-               Fix everything you introduced.
-            4. Do not push and do not create the PR; the workflow does that.
-               Write the PR title (Conventional Commit, one line) to
-               `$RUNNER_TEMP/pr-title.txt` and the PR body to
-               `$RUNNER_TEMP/pr-body.md`, following
-               `.github/pull_request_template.md`. Use `Closes #${{ inputs.issue }}`
-               only if the issue is fully done; otherwise use
-               `Refs #${{ inputs.issue }}` and add a "What remains" section.
-               End the body with
-               `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-            5. Do not edit `.github/workflows/**` or security settings.
+            CI notes (the skill is `.claude/skills/implement-issue/SKILL.md`):
+            - You run unattended on branch claude/issue-${{ inputs.issue }},
+              already created from `main`. Nobody can answer questions; make
+              reasonable decisions and document them in the PR body.
+            - End every commit message with
+              `Co-Authored-By: Claude <noreply@anthropic.com>`.
+            - Do not push, open the PR or edit the issue; the workflow does
+              that afterwards. Write instead:
+              - the PR title to `$RUNNER_TEMP/pr-title.txt`,
+              - the PR body to `$RUNNER_TEMP/pr-body.md`, ending with
+                `🤖 Generated with [Claude Code](https://claude.com/claude-code)`,
+              - the issue body with the genuinely done checklist items ticked
+                to `$RUNNER_TEMP/issue-body.md`. The workflow rejects any
+                change other than `[ ]` → `[x]`.
+            - Do not edit `.github/workflows/**` or security settings.
           # claude-code-action does not grant Bash by default and nobody can
           # approve tool prompts in CI. `Task` enables subagents from
           # `.claude/agents/`. Safety rests on human review of the PR.
@@ -186,5 +178,30 @@ jobs:
 
           PR_URL=$(gh pr create --base main --head "$BRANCH" \
             --title "$TITLE" --body-file "$BODY_FILE")
+
+          # Tick the checklist items the agent judged done. Merged onto the
+          # current body, so edits made meanwhile survive and the agent can
+          # change nothing but checkbox state. The script is taken from the
+          # base commit so the agent's branch cannot alter it.
+          CHECKS="checklist not updated"
+          EDITED="$RUNNER_TEMP/issue-body.md"
+          if [ -s "$EDITED" ]; then
+            CURRENT="$RUNNER_TEMP/issue-body-current.md"
+            MERGED="$RUNNER_TEMP/issue-body-merged.md"
+            gh issue view "$ISSUE" --json body --jq .body > "$CURRENT"
+            git show "$BASE_SHA:.github/scripts/merge-checklist.py" > "$RUNNER_TEMP/merge-checklist.py"
+            if python3 "$RUNNER_TEMP/merge-checklist.py" "$CURRENT" "$EDITED" \
+                > "$MERGED" 2> "$RUNNER_TEMP/merge.log"; then
+              cat "$RUNNER_TEMP/merge.log"
+              if ! grep -q "^0 " "$RUNNER_TEMP/merge.log"; then
+                gh issue edit "$ISSUE" --body-file "$MERGED"
+              fi
+              CHECKS=$(cat "$RUNNER_TEMP/merge.log")
+            else
+              echo "::warning::Issue checklist not updated: $(cat "$RUNNER_TEMP/merge.log")"
+              CHECKS="checklist not updated: agent changed more than checkbox state"
+            fi
+          fi
+
           gh issue comment "$ISSUE" --body \
-            "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`)."
+            "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`; $CHECKS)."
