@@ -189,10 +189,14 @@ jobs:
           DRAFT=()
           if [ "$GATE" != "passed" ]; then
             DRAFT=(--draft)
+            # Backticks are Markdown here, not command substitution.
+            # shellcheck disable=SC2016
             printf '\n> ❌ **Verification gate failed** (`scripts/check.sh full`); see the [workflow run](%s/%s/actions/runs/%s). Opened as draft.\n' \
               "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$BODY_FILE"
           fi
           if [ "$AGENT_OUTCOME" != "success" ]; then
+            # Backticks are Markdown here, not command substitution.
+            # shellcheck disable=SC2016
             printf '\n> ⚠️ **Partial work**: the agent did not report success (outcome: `%s`, often the turn budget). Check the diff for completeness.\n' \
               "$AGENT_OUTCOME" >> "$BODY_FILE"
           fi
