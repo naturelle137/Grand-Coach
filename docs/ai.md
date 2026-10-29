@@ -1,6 +1,7 @@
 # Opponent AI: `skat-ai`
 
-Strength levels of M4 (D-07, D-40): profiles, information boundary, the
+Strength levels of M4 (D-07, D-40) and the additional opponents Rookie,
+Goldfish and Mephisto (D-41): profiles, information boundary, the
 calibration protocol and its results. Details are in the code
 (`crates/skat-ai`).
 
@@ -44,6 +45,7 @@ not.
 
 | Level | Before card play | Card play, Kontra/Re | Budget |
 |-------|------------------|----------------------|--------|
+| Rookie | rules of thumb with mistakes | rules of thumb with mistakes | no search |
 | Easy | rules of thumb | rules of thumb | no search |
 | Medium | rules of thumb | `analyze` | 6 samples, 10⁸ nodes per task |
 | Strong | rules of thumb | `analyze` | `Budget::INTERACTIVE` (24 samples) |
@@ -64,9 +66,73 @@ not.
 - No level forgets observed history: every analysed decision uses the full
   view, as `skat-analysis` does.
 
+## Rookie
+
+`Level::Rookie` is Easy plus seeded mistakes (`Mistakes`,
+`Profile::ROOKIE_MISTAKES`). Each kind of decision deviates from the rules
+of thumb with its own probability:
+
+| Decision | Probability | Deviation |
+|----------|-------------|-----------|
+| Bidding | 0.35 per game | bid limit moved 1–3 bidding values up or down (a passing hand may bid 18–22) |
+| Announcement | 0.4 | second-best trump game by the rules' strength measure that still covers the bid |
+| Drücken | 0.2 | two random cards other than Jacks |
+| Kontra/Re | 0.15 | the rules' choice reversed |
+| Card | 0.12 | a random legal card |
+
+The bidding draw uses a seed fixed for the seat's whole bidding (opponent
+seed and hand), so a misjudged limit stays misjudged; the other draws use
+the decision seed. Every deviation is a legal action.
+
+## Goldfish
+
+Table mode `Opponents::Goldfish` in `skat-app`: one opponent, drawn per
+series from the opponents' seed stream, plays `Profile::GOLDFISH`; the
+other plays Medium. `Profile::GOLDFISH` is Strong with `forget = 0.5`:
+
+- In every card-play decision each card of a completed trick before the
+  last one is forgotten with probability 0.5 (`Opponent::forgotten`,
+  seeded per decision).
+- `skat_analysis::analyze_forgetful` samples the distributions as usual
+  and then puts every forgotten card in the place of a random hidden card
+  (another hand or the Skat, never a hand proven void in its suit); that
+  card counts as played instead. The Goldfish thus believes some played
+  cards, trumps included, are still out, and plays double-dummy in that
+  belief. The rest of the view (own hand, last trick, trick in progress,
+  counts) stays exact.
+- Bidding and declaring follow the rules of thumb, as for Strong.
+
+## Mephisto
+
+Table mode `Opponents::Mephisto` in `skat-app`, decided by
+`skat_ai::Mephisto`, which receives the whole `Game`:
+
+| Phase | Computer declarer | Its computer partner | Against the human declarer |
+|-------|-------------------|----------------------|----------------------------|
+| Bidding, Hand, Drücken, announcement | Mephisto | – | – (both bid as Mephisto) |
+| Card play, Kontra/Re | Mephisto | Strong | both defenders Mephisto |
+
+- Every decision is `skat_analysis::analyze_known` on the real
+  distribution (`World::from_omniscient`): one exact distribution, each
+  option played out, card play double-dummy; the best option by utility
+  is chosen. Before card play every option is its own task (parallel).
+- Two Mephisto defenders solve the same double-dummy game, in which the
+  defenders minimise together, so they play as one side.
+- Bidding: a bid or hold is allowed only if Mephisto also wins when every
+  other seat passes at once (checked exactly with `analyze_known` at the
+  following Hand-or-pickup decision; binary search over the bidding
+  values). As declarer Mephisto therefore only plays games it wins
+  double-dummy, against any defence. Among the allowed options the
+  analysis decides, with the other seats modelled by the rules of thumb.
+- Node budget `Mephisto::BUDGET`: 10⁸ nodes per task, as
+  `Budget::INTERACTIVE`. Without an estimate the rules of thumb decide.
+- The GUI shows the Mephisto variant of the chosen card faces (D-41).
+
 ## Information boundary and determinism
 
-- `Opponent::decide(view, cancel)` takes one seat's `PlayerView` (D-23).
+- `Opponent::decide(view, cancel)` takes one seat's `PlayerView` (D-23);
+  this covers every level and the Goldfish. Only `Mephisto::decide` takes
+  the whole `Game`.
   Its analysis input (`Opponent::analysis_input`) is that view, the
   profile's budget and a seed mixed from the opponent's seed and public
   facts of the view.
@@ -86,10 +152,13 @@ not.
 
 Tests: `crates/skat-ai/tests/fairness.rs` swaps concealed cards (hands,
 Skat, also in Hand and Ouvert games) while the deciding seat's view stays
-identical and checks equal analysis inputs and decisions for every level,
-including a known own Skat and revealed Ouvert cards;
-`tests/levels.rs` covers profiles, reproducibility, complete games and the
-fallbacks.
+identical and checks equal analysis inputs, forgotten cards and decisions
+for every level and the Goldfish, including a known own Skat and revealed
+Ouvert cards; `tests/levels.rs` covers profiles, reproducibility,
+complete games and the fallbacks; `tests/variants.rs` the Rookie's
+deviation rates, what the Goldfish forgets and that Mephisto never loses
+a game it declares. `skat-app/tests/series.rs` checks which decisions see
+every card in the Mephisto mode and the Goldfish draw.
 
 ## Calibration results
 
@@ -119,6 +188,20 @@ Both levels bid by the same rules, so seatings with equal bidding produce
 equal declarers; the steps come from card play and Kontra/Re. Wall time:
 4 min (Easy–Medium), 23 min (Medium–Strong), 9 min (Easy–Strong).
 
+Rookie and Goldfish, same protocol and suite (deals 0–199, Goldfish
+0–99), run after D-41:
+
+| Pair | Deals | Difference | Std. error | 95 % interval |
+|------|-------|------------|------------|---------------|
+| Easy − Rookie | 200 | +19.70 | 2.16 | [+15.46, +23.94] |
+| Medium − Goldfish profile | 100 | +14.00 | 3.95 | [+6.26, +21.73] |
+| Strong − Goldfish profile | 100 | +17.09 | 3.62 | [+10.00, +24.18] |
+
+The Goldfish profile alone is weaker than Medium; in the Goldfish mode it
+sits next to a Medium opponent. Mephisto is not part of these pairings:
+it is a table mode with full knowledge, and as declarer it never loses
+(`tests/variants.rs`).
+
 Tuning runs before (tuning suite, 30–60 deals each) compared analysed
 bidding, analysed declaring, 4/6/24 samples and temperature 4; they are
 not part of the evidence above.
@@ -147,6 +230,22 @@ hardware, quiet machine). Decisions by rules of thumb take well under
 | Strong | Kontra | 0.33 s | 2.5 s | 3.5 s |
 | Strong | Card play, trick 1 | 0.74 s | 2.2 s | 5.4 s |
 | Strong | Card play, trick 4 / 8 | 6 ms / 1 ms | 21 ms / 1 ms | 47 ms / 2 ms |
+
+Rookie decides in well under 1 ms. Goldfish and Mephisto, 10 positions
+per kind (same command):
+
+| Opponent | Decision | Median | p90 | Max |
+|----------|----------|--------|-----|-----|
+| Goldfish | Kontra | 0.35 s | 2.5 s | 3.3 s |
+| Goldfish | Card play, trick 1 / 4 / 8 | 1.1 s / 5 ms / 1 ms | 2.0 s / 15 ms / 2 ms | 5.4 s / 44 ms / 2 ms |
+| Mephisto | Reizen | 0.89 s | 3.4 s | 3.6 s |
+| Mephisto | Hand/pickup | 0.11 s | 0.22 s | 0.60 s |
+| Mephisto | Drücken | 0.52 s | 1.4 s | 1.9 s |
+| Mephisto | Announcement | 0.23 s | 0.31 s | 0.59 s |
+| Mephisto | Kontra | 0.06 s | 0.34 s | 1.1 s |
+| Mephisto | Card play, trick 1 / 4 / 8 | 62 ms / 3 ms / 1 ms | 0.18 s / 4 ms / 1 ms | 0.31 s / 7 ms / 1 ms |
+
+The Goldfish costs what Strong costs (forgetting starts at trick 3).
 
 All levels meet the M3 target (card play and Kontra/Re: median ≤ 1 s,
 p90 ≤ 3 s). With only the first 10 positions per kind, Strong's first

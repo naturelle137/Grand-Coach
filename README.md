@@ -14,7 +14,8 @@ Zug. Schwerpunkte sind Kartenzählen und das Hineinversetzen in die Gegner.
 ### Funktionen (geplant)
 
 - Skat nach ISkO, optional mit Kontra/Re, Wertung nach Seeger-Fabian
-- Gegnerstärke in drei Stufen (Leicht, Mittel, Stark)
+- Gegnerstärke in Stufen (Grünschnabel, Leicht, Mittel, Stark) sowie die
+  Modi Goldfisch und Mephisto
 - Live-Coach in Stufen: aus / auf Anfrage / wichtige Entscheidungen / jeder Zug
 - Kartenzählhilfe und Quiz
 - Offener Modus, Replay, Analyse nach dem Spiel
@@ -26,7 +27,8 @@ Details: [docs/vision.md](docs/vision.md).
 ### Status
 
 Spielbare Version: eine Serie gegen zwei Computergegner, deren Stärke
-(Leicht, Mittel, Stark) einzeln wählbar ist, mit Kontra/Re, drei
+(Grünschnabel, Leicht, Mittel, Stark) einzeln wählbar ist, oder gegen
+Goldfisch oder Mephisto, mit Kontra/Re, drei
 Kartenbildern und deutscher oder englischer Oberfläche. Unter Linux
 getestet, Windows 11 noch nicht.
 Fortschritt: [docs/roadmap.md](docs/roadmap.md).
@@ -59,7 +61,7 @@ cargo run --release -p gui-egui
 
 Du spielst unten, die Gegner sitzen links und rechts. Über „Spiel → Neue
 Serie …“ wählst du feste Spielzahl (z. B. 36) oder freies Spiel, Kontra/Re,
-die Stärke jedes Gegners und den Startwert; unter „Einstellungen“ Sprache und Kartenbild. Rechts
+die Gegner (Stärke je Gegner, Goldfisch oder Mephisto) und den Startwert; unter „Einstellungen“ Sprache und Kartenbild. Rechts
 stehen der letzte Stich und die Spielliste (Seeger-Fabian).
 
 ### Mitwirken
@@ -88,7 +90,8 @@ Focus: card counting and putting yourself in the opponents' shoes.
 ### Features (planned)
 
 - Skat per ISkO, optional Kontra/Re, Seeger-Fabian scoring
-- Three opponent strength levels (Easy, Medium, Strong)
+- Opponent levels (Rookie, Easy, Medium, Strong) and the modes Goldfish
+  and Mephisto
 - Live coach with levels: off / on request / important decisions / every move
 - Card-counting aid and quiz
 - Open mode, replay, post-game analysis
@@ -100,7 +103,8 @@ Details: [docs/vision.md](docs/vision.md).
 ### Status
 
 Playable version: a series against two computer opponents whose strength
-(Easy, Medium, Strong) is chosen separately, with Kontra/Re, three card
+(Rookie, Easy, Medium, Strong) is chosen separately, or against Goldfish or
+Mephisto, with Kontra/Re, three card
 faces and a German or English UI. Tested on Linux, not yet on Windows 11.
 Progress: [docs/roadmap.md](docs/roadmap.md).
 
@@ -132,7 +136,8 @@ cargo run --release -p gui-egui
 
 You play at the bottom; the opponents sit left and right. "Game → New
 series …" chooses a fixed number of games (e.g. 36) or free play,
-Kontra/Re, each opponent's strength and the seed; "Settings" switches language and card faces. The
+Kontra/Re, the opponents (a level for each, Goldfish or Mephisto) and the
+seed; "Settings" switches language and card faces. The
 right-hand side shows the last trick and the score sheet (Seeger-Fabian).
 
 ### Contributing
