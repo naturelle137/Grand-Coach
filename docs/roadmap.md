@@ -1,10 +1,9 @@
 # Roadmap
 
-**Current status:** M2 done (first playable version, issue #6). The
-interactive smoke test on Windows 11 is still open (D-36,
-[testing.md](testing.md#platform-verification-m2)). M3 (issue #7) in
-progress: the shared analysis is implemented and tested
-([analysis.md](analysis.md)); the milestone is not yet marked done.
+**Current status:** M3 done (shared analysis, issue #7,
+[analysis.md](analysis.md); accepted per D-39). The interactive smoke test
+on Windows 11 is still open (D-36,
+[testing.md](testing.md#platform-verification-m2)). Next: M4.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
@@ -26,7 +25,7 @@ No individual tasks here.
   frontend, self-made cards with switchable card faces, and a German/English
   UI.
 
-- [ ] **M3 – Analysis layer (`skat-analysis`)**
+- [x] **M3 – Analysis layer (`skat-analysis`)**
   Done when card counter, opponent model (distributions from bidding,
   following suit and discards) and option evaluation (Monte Carlo and
   double-dummy) deliver winning chance and expected points for every
