@@ -15,6 +15,7 @@ putting yourself in the opponents' shoes.
 - `docs/decisions.md`: decision log (D-xx) and open points
 - `docs/roadmap.md`: milestones and current status (update after each milestone)
 - `docs/testing.md`: test levels and the verification gate (D-30)
+- `docs/analysis.md`: analysis semantics, budgets and latency (D-37, D-38)
 - `docs/third-party.md`: origin and licence of third-party files
 - `docs/glossary.md`: German Skat terms → English
 - `CONTRIBUTING.md`: branching, commits, pull requests
@@ -39,7 +40,7 @@ godot-rust/gdext (D-11).
 
 ```text
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI
-crates/skat-analysis  card counter, opponent model, option evaluation (Monte Carlo, double-dummy)
+crates/skat-analysis  card counter, opponent model, option evaluation (Monte Carlo, double-dummy; docs/analysis.md)
 crates/skat-ai        opponent AI with strength levels
 crates/skat-coach     structured explanations (text keys + parameters), no texts
 crates/skat-app       application interface: session, commands, events, view models
@@ -103,6 +104,7 @@ The desktop app is the binary `grand-coach` of `crates/gui-egui`
 cargo run --locked --release -p gui-egui      # start the game
 GRAND_COACH_SEED=42 cargo run -p gui-egui     # replay a series seed
 cargo run --locked -p cardgen                 # regenerate assets/cards/
+cargo run --locked --release -p skat-analysis --example bench  # analysis latency
 ```
 
 On Linux the window needs EGL/GL and Wayland or X11 client libraries

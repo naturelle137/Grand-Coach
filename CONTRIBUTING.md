@@ -65,7 +65,12 @@ Build and test commands can then use `--locked --offline`, for example
 `cargo test --locked --offline --all-features`. The test suite includes
 10,000 seeded games and their deterministic replays, complete seeded
 series through `skat-app` and headless GUI tests that play series by
-clicks.
+clicks. The latency and estimation quality of the analysis are measured
+by hand (see [docs/analysis.md](docs/analysis.md)):
+
+```sh
+cargo run --locked --release -p skat-analysis --example bench
+```
 
 New Rust
 dependencies must have a compatible licence and be listed in

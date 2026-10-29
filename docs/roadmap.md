@@ -2,7 +2,9 @@
 
 **Current status:** M2 done (first playable version, issue #6). The
 interactive smoke test on Windows 11 is still open (D-36,
-[testing.md](testing.md#platform-verification-m2)). Next: M3.
+[testing.md](testing.md#platform-verification-m2)). M3 (issue #7) in
+progress: the shared analysis is implemented and tested
+([analysis.md](analysis.md)); the milestone is not yet marked done.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
