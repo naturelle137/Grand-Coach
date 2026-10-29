@@ -31,7 +31,7 @@ Keep all documents short.
 Rust (Cargo workspace), GUI with egui. Later additionally Godot via
 godot-rust/gdext (D-11).
 
-## Architecture (planned crates)
+## Architecture (crates; only `skat-core` exists so far)
 ```
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI
 crates/skat-analysis  card counter, opponent model, option evaluation (Monte Carlo, double-dummy)
@@ -61,11 +61,26 @@ Translations live in `assets/i18n/`.
   no Bock.
 
 ## Build and test
-The repository currently contains documentation only; there is no Cargo
-workspace yet. Do not invent or claim build, test or lint commands until they
-exist; once they do, document the verified commands here and in
-`CONTRIBUTING.md`. For documentation changes, run `git diff --check` and check
-relative links.
+Verified commands (Rust stable, Cargo workspace at the repository root):
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo test --all-features   # includes the serde round-trip tests
+```
+
+`cargo test` includes 10,000 seeded random games
+(`crates/skat-core/tests/random_games.rs`). For documentation changes, run
+`git diff --check` and check relative links.
+Document new commands here and in `CONTRIBUTING.md` only once verified.
+
+Local Fedora 44 Distrobox setup is documented in `CONTRIBUTING.md` and was
+verified with Rust 1.99.1. `cargo fetch --locked` prepares the dependency
+cache; `cargo build --locked --offline`, `cargo test --locked --offline`
+and `cargo test --locked --offline --all-features` also pass locally.
+There is no executable or GUI target yet.
 
 ## Testing
 - Rule engine and analysis are test-driven; rule cases get unit tests with
@@ -77,6 +92,9 @@ relative links.
 - Branching, Conventional Commits and PRs: see `CONTRIBUTING.md` (D-17).
   Feature branches from `main`, changes only via PR. Update affected vision,
   roadmap and decision documents in the same PR.
+- In local sessions: once changes pass all checks under "Build and test",
+  commit them (Conventional Commits) and push the feature branch. Never
+  commit failing changes, never push to `main`.
 - In CI via `.github/workflows/implement-issue.yml` (D-27): follow the
   workflow prompt; do not push or open the PR yourself.
 - Every source file starts with the SPDX header:

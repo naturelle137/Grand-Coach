@@ -2,8 +2,8 @@
 
 Crate layout and dependency direction are in [vision.md](vision.md#architecture-guideline).
 This page fixes the decisions inside `skat-core` that analysis, AI, coach,
-replay and frontends build on (D-20 to D-25). Keep it short; details belong in
-the code.
+replay and frontends build on (D-20 to D-26, rule interpretations in D-28).
+Keep it short; details belong in the code (`crates/skat-core`).
 
 ## Cards
 
@@ -27,9 +27,17 @@ the code.
   fn apply(&mut self, action: Action) -> Result<Vec<Event>, RuleError>;
   ```
 - `apply` validates first and mutates only on success: a rejected action
-  leaves the state unchanged.
+  leaves the state unchanged. `validate` performs the same check without
+  applying.
 - `Action` and `Event` are plain enums. `RuleError` is a structured enum with
   no texts (D-13).
+- Actions: `Bid(value)`, `Hold`, `Pass`, `Hand`, `TakeSkat`,
+  `Discard(CardSet)`, `Announce(Announcement)`, `Play(Card)`, `Kontra`,
+  `KeinKontra`, `Re`, `KeinRe`. They always act for `current_seat()`.
+- Events carry only public information (no Skat, discard or hand cards,
+  except the Ouvert reveal), so a frontend may show them to every seat.
+- Rule helpers usable by analysis: `legal_cards`, `trick_winner`,
+  `GameType::trumps`, `spitzen`.
 
 ## Kontra/Re in the flow (D-26)
 
@@ -62,7 +70,8 @@ the code.
 
 - `RuleConfig { kontra_re: bool }`; further options only when decided.
 - Game value, Überreizen and Seeger-Fabian are pure functions over a finished
-  game (`GameResult`), testable without playing a game.
+  game: `settle(&GameOutcome) -> GameResult` and
+  `GameResult::seeger_fabian()`, testable without playing a game.
 - Seeger-Fabian returns the contribution of each seat for one game; series
   bookkeeping is not part of `skat-core`.
 

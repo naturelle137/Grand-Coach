@@ -18,7 +18,35 @@ Skat terms stay German; see the [glossary](docs/glossary.md).
 
 ## Development setup
 
-*To be defined once there is code.*
+Install Rust stable (minimum 1.88) via [rustup](https://rustup.rs), including
+the `rustfmt` and `clippy` components, and a native linker.
+Alternatively, in a Fedora Distrobox, install the distribution packages
+(verified on Fedora 44 with Rust 1.99.1):
+
+```sh
+sudo dnf install -y rust cargo rustfmt clippy gcc
+```
+
+Only the rule-engine library exists so far; there is no GUI or `cargo run`
+target yet. Run it locally through its tests. From the repository root,
+run before every pull request:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo test --all-features
+```
+
+Use `cargo fetch --locked` to download the locked dependencies in advance.
+Build and test commands can then use `--locked --offline`, for example
+`cargo test --locked --offline --all-features`. The test suite includes
+10,000 seeded games and their deterministic replays.
+
+For documentation-only changes, `git diff --check` is enough. New Rust
+dependencies must have a compatible licence and be listed in
+[docs/third-party.md](docs/third-party.md).
 
 ## Branching
 
