@@ -1,9 +1,11 @@
 # Roadmap
 
 **Current status:** M3 done (shared analysis, issue #7,
-[analysis.md](analysis.md); accepted per D-39). The interactive smoke test
-on Windows 11 is still open (D-36,
-[testing.md](testing.md#platform-verification-m2)). Next: M4.
+[analysis.md](analysis.md); accepted per D-39). M4 (issue #9) is
+implemented and calibrated ([ai.md](ai.md), D-40); the interactive smoke
+test of the strength levels is still open, so M4 is not marked done. The
+interactive smoke test on Windows 11 is still open (D-36,
+[testing.md](testing.md#platform-verification-m2)).
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.

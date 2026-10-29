@@ -72,6 +72,14 @@ by hand (see [docs/analysis.md](docs/analysis.md)):
 cargo run --locked --release -p skat-analysis --example bench
 ```
 
+The strength levels of the opponents are calibrated and timed by hand
+(see [docs/ai.md](docs/ai.md)):
+
+```sh
+cargo run --locked --release -p skat-ai --example calibrate -- validation medium strong 200 10 0
+cargo run --locked --release -p skat-ai --example latency
+```
+
 New Rust
 dependencies must have a compatible licence and be listed in
 [docs/third-party.md](docs/third-party.md).

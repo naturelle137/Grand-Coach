@@ -64,6 +64,8 @@ actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 | Interface / contract | serde round-trips, determinism (seed → deal, replay); `skat-app` commands, events, view models and errors as JSON | `skat-core/tests/serde.rs`, `skat-app/tests/series.rs` | test |
 | Analysis | card counting, voids, visibility and hidden-card distributions on fixed positions; double-dummy against hand-solved positions and an exhaustive minimax; every decision type, information isolation, reproducibility, cancellation, Überreizen, Kontra/Re, Monte Carlo against exact enumeration | `skat-analysis/tests/` | test |
 | Performance | latency and estimation quality of the analysis per decision phase ([analysis.md](analysis.md#latency-target-and-benchmark)) | `skat-analysis/examples/bench.rs` | manual |
+| AI | strength profiles, information isolation by swapping concealed cards for every level, reproducibility, fallback on cancellation and exhausted budgets, complete games; background opponent moves through `skat-app` | `skat-ai/tests/`, `skat-ai/src/arena.rs`, `skat-app/tests/series.rs` | test |
+| Calibration | AI-vs-AI strength ordering and decision latency per level ([ai.md](ai.md)) | `skat-ai/examples/calibrate.rs`, `skat-ai/examples/latency.rs` | manual |
 | System | whole games end to end: 10,000 seeded random games against an independent rule model; complete seeded 36-game series with a random human, information boundary of the human's view, opponent self-play | `skat-core/tests/random_games.rs`, `skat-app/tests/`, `skat-app/src/tests.rs`, `skat-ai` | test (10k), deep (1M) |
 | GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, every decision and game variant clicked at least once, table elements shown, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/` | test |
 | Manual smoke run | launch the window on each platform and play (see `CONTRIBUTING.md`) | – | per milestone |
@@ -90,7 +92,8 @@ series to the score sheet, switch language and card faces.
   done by the human PR review (D-27) against the issue's intent and by
   playtesting against each milestone's "Done when" in
   [roadmap.md](roadmap.md). Measurable parts move into verification once
-  they exist (e.g. AI strength levels via AI-vs-AI series in `deep`, M4).
+  they exist (e.g. AI strength levels via the AI-vs-AI calibration runner,
+  M4, [ai.md](ai.md)).
 
 ## Later (CD)
 
