@@ -40,6 +40,7 @@ changed by adding a new entry that supersedes the old one ("supersedes D-xx").
 | D-33 | 2026-10-29 | Card faces are generated SVGs (`tools/cardgen`), committed under `assets/cards/` and embedded into the frontend at build time; `egui_extras` renders them with `resvg`. Indices are stroked paths, so no font is needed. A test fails if the committed files differ from the generator output. German faces use the indices U, O, K, A. | Resolves the open point: no pre-rasterised images, sharp at every size, no font or licence risk. |
 | D-34 | 2026-10-29 | Minimum Rust version 1.95 (supersedes 1.88), required by egui/eframe 0.37. | The frontend needs a current egui; Rust 1.95 is widely available. |
 | D-35 | 2026-10-29 | M2 opponents: one deterministic `BaselineOpponent` in `skat-ai` that only receives its seat's `PlayerView` and picks one of the listed legal actions, using the minimal shared measures in `skat-analysis`. The frontend paces opponent moves with the command `AdvanceOpponent`. | Issue #6 asks for legal, fair, reproducible opponents without strategic analysis; pacing in the frontend keeps `skat-app` free of timers. |
+| D-36 | 2026-10-29 | The maintainer declares M2 done although Windows 11 is not yet verified interactively. Linux has a recorded interactive smoke test; Windows is covered by the CI build and headless GUI tests on Windows Server. The Windows 11 smoke test is reported as open in [testing.md](testing.md#platform-verification-m2) and stays an open point. | No Windows 11 machine is available right now; blocking M3 on it gains nothing, and the gap is stated explicitly. |
 
 ## D-03 Kontra/Re in detail
 
@@ -139,5 +140,6 @@ below refer to the ISkO.
 
 ## Open points
 
+- Interactive smoke test on Windows 11 (D-36).
 - Calibrate "strength level ↔ parameters" empirically (AI vs. AI).
 - Conceding a game (ISkO 4.3) is not yet modelled in `skat-core` (D-28.5).

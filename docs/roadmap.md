@@ -1,8 +1,8 @@
 # Roadmap
 
-**Current status:** M1 done (`crates/skat-core`, issue #5). M2 (issue #6)
-is implemented; it stays open until the platform smoke tests in
-[testing.md](testing.md#platform-verification-m2) are recorded.
+**Current status:** M2 done (first playable version, issue #6). The
+interactive smoke test on Windows 11 is still open (D-36,
+[testing.md](testing.md#platform-verification-m2)). Next: M3.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
@@ -18,7 +18,7 @@ No individual tasks here.
   including overbidding, Seeger-Fabian) plus Kontra/Re per D-03, and thousands
   of random games (seeded) run through without rule violations.
 
-- [ ] **M2 – First playable version**
+- [x] **M2 – First playable version**
   Done when a series against two simple opponents can be played on Linux and
   Windows. Includes the application interface (`skat-app`), the egui
   frontend, self-made cards with switchable card faces, and a German/English
