@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: EUPL-1.2
+# Activate with: git config core.hooksPath .githooks (docs/testing.md)
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh" quick

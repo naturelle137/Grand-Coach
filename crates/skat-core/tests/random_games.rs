@@ -15,7 +15,16 @@ use skat_core::{
     RuleConfig, Seat, Suit, reizwerte,
 };
 
+/// Default number of games; `SKAT_RANDOM_GAMES` overrides it for the scheduled
+/// deep run (see `docs/testing.md`).
 const GAMES: u64 = 10_000;
+
+fn game_count() -> u64 {
+    match std::env::var("SKAT_RANDOM_GAMES") {
+        Ok(n) => n.parse().expect("SKAT_RANDOM_GAMES must be a number"),
+        Err(_) => GAMES,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Independent rule model (deliberately not using skat_core's rule functions).
@@ -465,7 +474,7 @@ fn play_game(seed: u64, config: RuleConfig, stats: &mut Stats) -> (Vec<Action>, 
 #[test]
 fn ten_thousand_seeded_games() {
     let mut stats = Stats::default();
-    for seed in 0..GAMES {
+    for seed in 0..game_count() {
         let config = RuleConfig {
             kontra_re: seed.is_multiple_of(2),
         };

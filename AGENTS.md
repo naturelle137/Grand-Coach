@@ -13,6 +13,7 @@ putting yourself in the opponents' shoes.
 - `docs/architecture.md`: design decisions inside `skat-core`
 - `docs/decisions.md`: decision log (D-xx) and open points
 - `docs/roadmap.md`: milestones and current status (update after each milestone)
+- `docs/testing.md`: test levels and the verification gate (D-30)
 - `docs/third-party.md`: origin and licence of third-party files
 - `docs/glossary.md`: German Skat terms → English
 - `CONTRIBUTING.md`: branching, commits, pull requests
@@ -57,23 +58,27 @@ Translations live in `assets/i18n/`.
   files under `assets/i18n/`.
 - **Determinism.** All randomness goes through a passed-in seed/RNG so tests,
   replays and "same deal again" work.
+- **Green gate only.** Never commit or push with a failing
+  `scripts/check.sh`, never bypass the git hooks (`--no-verify`, changing
+  `core.hooksPath`), never weaken checks or tests to get green.
 - Rule questions are decided by the ISkO; Kontra/Re follows D-03. No Ramsch,
   no Bock.
 
 ## Build and test
-Verified commands (Rust stable, Cargo workspace at the repository root):
+All checks run through one script (D-30, `docs/testing.md`):
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-cargo test --all-features   # includes the serde round-trip tests
+scripts/check.sh          # full gate: whitespace, SPDX, fmt, clippy, tests (± features)
+scripts/check.sh quick    # pre-commit subset
+scripts/check.sh deep     # 1,000,000 seeded random games (weekly in CI)
 ```
 
-`cargo test` includes 10,000 seeded random games
-(`crates/skat-core/tests/random_games.rs`). For documentation changes, run
-`git diff --check` and check relative links.
+The git hooks in `.githooks/` run `quick` before each commit and `full`
+before each push; Claude Code activates them via `.claude/settings.json`.
+CI runs `full` on Linux and Windows plus an MSRV check; its job `ci-ok` is
+required to merge into `main`. `cargo test` includes 10,000 seeded random
+games (`crates/skat-core/tests/random_games.rs`). For documentation
+changes, also check relative links.
 Document new commands here and in `CONTRIBUTING.md` only once verified.
 
 Local Fedora 44 Distrobox setup is documented in `CONTRIBUTING.md` and was
@@ -92,7 +97,7 @@ There is no executable or GUI target yet.
 - Branching, Conventional Commits and PRs: see `CONTRIBUTING.md` (D-17).
   Feature branches from `main`, changes only via PR. Update affected vision,
   roadmap and decision documents in the same PR.
-- In local sessions: once changes pass all checks under "Build and test",
+- In local sessions: once changes pass `scripts/check.sh`,
   commit them (Conventional Commits) and push the feature branch. Never
   commit failing changes, never push to `main`.
 - To implement an issue, follow the skill
