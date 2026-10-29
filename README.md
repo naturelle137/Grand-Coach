@@ -1,4 +1,4 @@
-# Grand-Coach
+# Grand Coach
 
 [Deutsch](#deutsch) · [English](#english)
 
