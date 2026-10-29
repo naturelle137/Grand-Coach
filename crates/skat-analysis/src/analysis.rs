@@ -25,9 +25,9 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand_chacha::ChaCha8Rng;
-use rand_chacha::rand_core::SeedableRng;
+use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_core::{
-    Action, Call, CardSet, Deal, Follow, Game, GameResult, GameType, KontraLevel, Phase,
+    Action, Call, Card, CardSet, Deal, Follow, Game, GameResult, GameType, KontraLevel, Phase,
     PlayerView, Seat, kontra_eligible, spitzen,
 };
 
@@ -36,7 +36,7 @@ use crate::double_dummy::{DdValue, Position, Solver, Stakes};
 use crate::evidence;
 use crate::knowledge::Knowledge;
 use crate::policy;
-use crate::sampling::{Diagnostic, HiddenCards, World};
+use crate::sampling::{Diagnostic, HiddenCards, Place, World};
 
 /// Result of analysing one decision of one seat.
 #[derive(Clone, Debug, PartialEq)]
@@ -203,6 +203,61 @@ pub fn analyze(
     seed: u64,
     cancel: Option<&Cancel>,
 ) -> Result<Analysis, Vec<Diagnostic>> {
+    analyze_with(view, budget, seed, cancel, Worlds::Sampled)
+}
+
+/// Like [`analyze`], but the seat does not remember where the `forgotten`
+/// cards went (cards of completed tricks): in every sampled distribution
+/// each forgotten card takes the place of a randomly chosen hidden card,
+/// which counts as played instead. The seat thus believes some played
+/// cards are still out. Only card play is affected; other phases behave
+/// like [`analyze`]. Results are never marked exact.
+pub fn analyze_forgetful(
+    view: &PlayerView,
+    forgotten: CardSet,
+    budget: Budget,
+    seed: u64,
+    cancel: Option<&Cancel>,
+) -> Result<Analysis, Vec<Diagnostic>> {
+    let played: CardSet = view.tricks.iter().flat_map(|t| t.cards).collect();
+    let forgotten = forgotten & played;
+    if view.phase != Phase::Spiel || forgotten.is_empty() {
+        return analyze(view, budget, seed, cancel);
+    }
+    analyze_with(view, budget, seed, cancel, Worlds::Forgetful(forgotten))
+}
+
+/// Evaluates every legal action of `view.seat` in one known distribution
+/// of the hidden cards, exactly (one distribution, enumerated). With the
+/// real distribution ([`World::from_omniscient`]) this is full knowledge;
+/// only for uses that are allowed to see every card. Fails if `world` does
+/// not fit the view.
+pub fn analyze_known(
+    view: &PlayerView,
+    world: World,
+    budget: Budget,
+    cancel: Option<&Cancel>,
+) -> Result<Analysis, Vec<Diagnostic>> {
+    analyze_with(view, budget, 0, cancel, Worlds::Known(world))
+}
+
+/// Where the distributions of an analysis come from.
+enum Worlds {
+    /// Sampled (or enumerated) from the seat's information set.
+    Sampled,
+    /// Sampled, then forgotten cards swapped in.
+    Forgetful(CardSet),
+    /// One given distribution.
+    Known(World),
+}
+
+fn analyze_with(
+    view: &PlayerView,
+    budget: Budget,
+    seed: u64,
+    cancel: Option<&Cancel>,
+    source: Worlds,
+) -> Result<Analysis, Vec<Diagnostic>> {
     let hidden = HiddenCards::from_view(view)?;
     let ctx = Context::new(view)?;
     let observations = observations(view);
@@ -229,14 +284,34 @@ pub fn analyze(
     }
 
     let samples = budget.samples.max(1) as usize;
-    let (worlds, enumerated) = match hidden.enumerate(samples) {
-        Some(all) => (all, true),
-        None => {
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            (
-                (0..samples).map(|_| hidden.sample(&mut rng)).collect(),
-                false,
-            )
+    let (worlds, enumerated) = match source {
+        Worlds::Known(world) => {
+            if !hidden.admits(&world) {
+                return Err(vec![Diagnostic::NoConsistentDeal]);
+            }
+            (vec![world], true)
+        }
+        Worlds::Sampled | Worlds::Forgetful(_) => {
+            let (mut worlds, enumerated) = match hidden.enumerate(samples) {
+                Some(all) => (all, true),
+                None => {
+                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                    (
+                        (0..samples).map(|_| hidden.sample(&mut rng)).collect(),
+                        false,
+                    )
+                }
+            };
+            if let Worlds::Forgetful(forgotten) = source {
+                let mut rng = ChaCha8Rng::seed_from_u64(seed ^ FORGET_STREAM);
+                let voids = Knowledge::from_view(view).voids;
+                for world in &mut worlds {
+                    forget(world, &hidden, &voids, forgotten, &mut rng);
+                }
+                (worlds, false)
+            } else {
+                (worlds, enumerated)
+            }
         }
     };
     if view.phase != Phase::Spiel && ctx.replay(&worlds[0]).is_none() {
@@ -270,11 +345,15 @@ pub fn analyze(
             .flat_map(|w| keep.iter().map(move |&o| (w, vec![o])))
             .collect();
         table.run(&ctx, &worlds, &tasks, nodes, cancel);
+    } else if worlds.len() == 1 && view.phase != Phase::Spiel {
+        // One distribution before card play: one task per option, so the
+        // options are solved in parallel.
+        let tasks: Vec<Task> = (0..n_options).map(|o| (0, vec![o])).collect();
+        table.run(&ctx, &worlds, &tasks, nodes, cancel);
     } else {
         let tasks: Vec<Task> = (0..worlds.len()).map(|w| (w, all.clone())).collect();
         table.run(&ctx, &worlds, &tasks, nodes, cancel);
     }
-
     let weights: Vec<f64> = worlds
         .iter()
         .zip(&table.complete)
@@ -313,6 +392,45 @@ pub fn analyze(
             seed,
         },
     })
+}
+
+/// Stream of the random choices that place forgotten cards.
+const FORGET_STREAM: u64 = 0x676f_6c64_6669_7368;
+
+/// Swaps every forgotten card into the place of a random hidden card of
+/// `world` (a hand or Skat with a slot, never one already swapped in, and
+/// never a hand proven void in the card's suit, so the position stays
+/// playable).
+fn forget(
+    world: &mut World,
+    hidden: &HiddenCards,
+    voids: &[CardSet; 3],
+    forgotten: CardSet,
+    rng: &mut ChaCha8Rng,
+) {
+    let mut swapped_in = CardSet::EMPTY;
+    for card in forgotten {
+        let mut candidates: Vec<(Place, Card)> = Vec::new();
+        for slot in hidden.slots() {
+            let cards = match slot.place {
+                Place::Seat(seat) if voids[seat.index()].contains(card) => continue,
+                Place::Seat(seat) => world.hands[seat.index()],
+                Place::Skat => world.skat,
+            };
+            candidates.extend((cards - swapped_in).into_iter().map(|c| (slot.place, c)));
+        }
+        if candidates.is_empty() {
+            continue;
+        }
+        let (place, out) = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
+        let target = match place {
+            Place::Seat(seat) => &mut world.hands[seat.index()],
+            Place::Skat => &mut world.skat,
+        };
+        target.remove(out);
+        target.insert(card);
+        swapped_in.insert(card);
+    }
 }
 
 /// Distributions every Drücken option is evaluated on when screening.

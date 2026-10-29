@@ -28,6 +28,7 @@ mod trick;
 
 pub use analysis::{
     Analysis, Assumption, Effort, Estimate, Observation, OptionValue, Status, analyze,
+    analyze_forgetful, analyze_known,
 };
 pub use budget::{Budget, Cancel, Interrupted, Meter};
 pub use knowledge::Knowledge;

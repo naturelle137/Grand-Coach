@@ -8,9 +8,12 @@ mod common;
 
 use common::*;
 use skat_analysis::sampling::Diagnostic;
-use skat_analysis::{Analysis, Budget, Cancel, Estimate, Status, analyze};
+use skat_analysis::sampling::World;
+use skat_analysis::{
+    Analysis, Budget, Cancel, Estimate, Status, analyze, analyze_forgetful, analyze_known,
+};
 use skat_core::{
-    Action, Announcement, Deal, Game, GameType, Phase, PlayerView, RuleConfig, Seat, Suit,
+    Action, Announcement, CardSet, Deal, Game, GameType, Phase, PlayerView, RuleConfig, Seat, Suit,
 };
 
 const SMALL: Budget = Budget {
@@ -430,4 +433,101 @@ fn monte_carlo_matches_exact_enumeration_within_tolerance() {
         }
     }
     assert!(checked >= 3, "{checked}");
+}
+
+/// The real distribution gives one exact result; a distribution that
+/// contradicts the view is rejected.
+#[test]
+fn known_world_analysis_is_exact_and_checked() {
+    let mut g = game(false);
+    // Bidding: Mittelhand's first call, with every card known.
+    let view = current_view(&g);
+    let world = World::from_omniscient(&g.omniscient_view());
+    let a = analyze_known(&view, world, SMALL, None).unwrap();
+    assert_complete(&view, &a);
+    assert_eq!(a.effort.planned, 1);
+    assert!(a.options.iter().all(|o| o.estimate.unwrap().exact));
+
+    run(&mut g, &VH_AT_18);
+    run(
+        &mut g,
+        &[
+            Action::Hand,
+            Action::Announce(Announcement::plain(GameType::Grand)),
+        ],
+    );
+    let view = current_view(&g);
+    let world = World::from_omniscient(&g.omniscient_view());
+    let a = analyze_known(&view, world, SMALL, None).unwrap();
+    assert_complete(&view, &a);
+    // Four Jacks and seven clubs: the Grand Hand cannot be lost.
+    let best = a
+        .options
+        .iter()
+        .map(|o| o.estimate.unwrap().win_chance)
+        .fold(0.0, f64::max);
+    assert_eq!(best, 1.0);
+    assert_eq!(analyze_known(&view, world, SMALL, None).unwrap(), a);
+
+    // A distribution that moves one of the seat's own cards is rejected.
+    let mh = Seat::Mittelhand.index();
+    let mut foreign = world;
+    let own = view.hand.iter().next().unwrap();
+    let other = world.hands[mh].iter().next().unwrap();
+    foreign.hands[view.seat.index()] = (view.hand - CardSet::single(own)) | CardSet::single(other);
+    foreign.hands[mh] = (world.hands[mh] - CardSet::single(other)) | CardSet::single(own);
+    assert!(analyze_known(&view, foreign, SMALL, None).is_err());
+}
+
+/// Forgotten cards turn an exact late position into an estimate; nothing
+/// forgotten (or outside card play) is the plain analysis.
+#[test]
+fn forgetful_analysis_believes_played_cards_are_out() {
+    let mut g = game(false);
+    run(&mut g, &VH_AT_18);
+    run(
+        &mut g,
+        &[
+            Action::Hand,
+            Action::Announce(Announcement::plain(GameType::Grand)),
+        ],
+    );
+    for _ in 0..21 {
+        let view = current_view(&g);
+        g.apply(view.legal_actions[0]).unwrap();
+    }
+    let view = current_view(&g);
+    let budget = Budget {
+        samples: 1000,
+        ..SMALL
+    };
+    let exact = analyze(&view, budget, 3, None).unwrap();
+    assert_eq!(
+        analyze_forgetful(&view, CardSet::EMPTY, budget, 3, None).unwrap(),
+        exact
+    );
+    let first: CardSet = view.tricks[0].cards.iter().copied().collect();
+    let budget = Budget {
+        samples: 16,
+        ..SMALL
+    };
+    let a = analyze_forgetful(&view, first, budget, 3, None).unwrap();
+    assert_complete(&view, &a);
+    assert!(!a.effort.enumerated);
+    assert!(a.options.iter().all(|o| !o.estimate.unwrap().exact));
+    assert_eq!(analyze_forgetful(&view, first, budget, 3, None).unwrap(), a);
+    // Cards never played cannot be forgotten.
+    let unplayed = view.hand;
+    assert_eq!(
+        analyze_forgetful(&view, unplayed, budget, 3, None).unwrap(),
+        analyze(&view, budget, 3, None).unwrap()
+    );
+
+    let g = game(false);
+    let view = current_view(&g);
+    let bidding = analyze(&view, SMALL, 4, None).unwrap();
+    assert_eq!(
+        analyze_forgetful(&view, CardSet::ALL, SMALL, 4, None).unwrap(),
+        bidding
+    );
 }
