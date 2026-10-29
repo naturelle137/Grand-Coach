@@ -8,7 +8,7 @@ use super::{CompletedTrick, Game, Phase, Step, Trick};
 use crate::bidding::{BidOutcome, Bidding};
 use crate::card::CardSet;
 use crate::deal::Deal;
-use crate::rules::{Announcement, Contract, GameType, trick_winner};
+use crate::rules::{Announcement, Contract, GameType, legal_cards, trick_winner};
 use crate::scoring::{GameResult, KontraLevel, settle};
 use crate::seat::Seat;
 use crate::RuleConfig;
@@ -181,6 +181,14 @@ impl Game {
         let finished = self.phase == Phase::Beendet;
         // Cards played per seat; every card at most once.
         let mut played_cards = [CardSet::EMPTY; 3];
+        // Hands as they were before each historical play, to check Bedienen.
+        let mut remaining = start;
+        let follows = |remaining: &mut [CardSet; 3], seat: Seat, card, led| {
+            let hand = remaining[seat.index()];
+            let ok = hand.contains(card) && legal_cards(contract.game, hand, led).contains(card);
+            remaining[seat.index()].remove(card);
+            ok
+        };
         let mut count = 0;
         let mut expected_leader = Seat::Vorhand;
         for (i, trick) in self.tricks.iter().enumerate() {
@@ -193,6 +201,9 @@ impl Game {
                 return Err("Null game continued after the declarer won a trick");
             }
             for (j, &card) in trick.cards.iter().enumerate() {
+                if !follows(&mut remaining, trick.seat_of(j), card, Some(trick.cards[0])) {
+                    return Err("a card was played against Bedienen");
+                }
                 played_cards[trick.seat_of(j).index()].insert(card);
                 count += 1;
             }
@@ -211,7 +222,11 @@ impl Game {
             return Err("leader of the trick in progress is wrong");
         }
         for (i, card) in self.current.cards.iter().flatten().enumerate() {
-            played_cards[Seat::from_index(expected_leader.index() + i).index()].insert(*card);
+            let seat = Seat::from_index(expected_leader.index() + i);
+            if !follows(&mut remaining, seat, *card, self.current.led()) {
+                return Err("a card was played against Bedienen");
+            }
+            played_cards[seat.index()].insert(*card);
             count += 1;
         }
         let total: usize = played_cards.iter().map(|c| c.len()).sum();

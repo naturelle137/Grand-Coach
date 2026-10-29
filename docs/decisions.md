@@ -100,6 +100,17 @@ below refer to the ISkO.
 8. **Dealing:** Fisher–Yates shuffle with rejection sampling on the
    `ChaCha8Rng` stream (seeded with `seed_from_u64`), dealt 3 – Skat 2 – 4 – 3
    from Vorhand, so a seed always gives the same deal.
+9. **Fixed-deal coverage:** each variant is played through (bidding,
+   announcement, cards, settlement) with hand-computed results in
+   `crates/skat-core/tests/`. `variants.rs` holds Grand (pickup, Hand,
+   Schneider/Schwarz announced, Ouvert), Herz and Pik (Hand, announced
+   levels, Ouvert), Schneider/Schwarz announced and made, Schwarz announced and
+   missed, Ouvert lost, Karo Hand lost with every announcement, Überreizen,
+   and Null (Hand, Ouvert, Ouvert Hand, won and lost). `play.rs` covers Kreuz
+   with pickup and Hand, Karo with pickup, Null with pickup and Null ending
+   early; `kontra.rs` covers Kontra/Re. Not covered by a fixed deal: Schneider
+   announced and missed with 61 to 89 Augen (unit test `announced_levels` in
+   `scoring.rs` only).
 
 ## Open points
 

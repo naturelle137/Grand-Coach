@@ -4,7 +4,11 @@
 
 #![cfg(feature = "serde")]
 
-use skat_core::{Action, Card, Deal, Game, RuleConfig, Seat};
+mod common;
+
+use skat_core::{
+    Action, Announcement, Card, CardSet, Deal, Game, GameType, Rank, RuleConfig, Seat, Suit,
+};
 
 #[test]
 fn game_and_view_roundtrip() {
@@ -80,6 +84,62 @@ fn inconsistent_game_is_rejected() {
             "{field} accepted"
         );
     }
+}
+
+/// Mittelhand plays Herz-Neun on a Kreuz lead while still holding Kreuz-Zehn.
+/// Card ownership, hand sizes and conservation all stay intact.
+#[test]
+fn off_suit_play_in_the_current_trick_is_rejected() {
+    let mut game = Game::new(0, RuleConfig::default());
+    for action in [
+        Action::Pass,
+        Action::Pass,
+        Action::Bid(18),
+        Action::Hand,
+        Action::Announce(Announcement::plain(GameType::Grand)),
+    ] {
+        game.apply(action).unwrap();
+    }
+    let c8 = Card::new(Suit::Kreuz, Rank::Acht);
+    let ct = Card::new(Suit::Kreuz, Rank::Zehn);
+    let h9 = Card::new(Suit::Herz, Rank::Neun);
+    game.apply(Action::Play(c8)).unwrap();
+    assert!(game.validate(Action::Play(h9)).is_err());
+    game.apply(Action::Play(ct)).unwrap();
+
+    let mut json = serde_json::to_value(&game).unwrap();
+    assert!(serde_json::from_value::<Game>(json.clone()).is_ok());
+    json["current"]["cards"][1] = serde_json::json!(h9.index());
+    let hand = (game.view(Seat::Mittelhand).hand - CardSet::single(h9)) | CardSet::single(ct);
+    json["hands"][Seat::Mittelhand.index()] = serde_json::json!(hand.bits());
+    assert!(serde_json::from_value::<Game>(json).is_err());
+}
+
+/// The same violation inside a completed trick: Hinterhand plays Herz-Dame
+/// on a Karo-Bube lead (Trumpf) while holding Karo.
+#[test]
+fn off_suit_play_in_a_completed_trick_is_rejected() {
+    let mut game = common::game(common::standard_deal(), false);
+    common::run(
+        &mut game,
+        &[
+            Action::Pass,
+            Action::Bid(18),
+            Action::Pass,
+            Action::Hand,
+            Action::Announce(Announcement::plain(GameType::Farbe(Suit::Karo))),
+        ],
+    );
+    common::play(&mut game, "CJ S7 D8  SJ S8 D9");
+    let d9 = common::c("D9");
+    let hq = common::c("HQ");
+
+    let mut json = serde_json::to_value(&game).unwrap();
+    assert!(serde_json::from_value::<Game>(json.clone()).is_ok());
+    json["tricks"][1]["cards"][2] = serde_json::json!(hq.index());
+    let hand = (game.view(Seat::Hinterhand).hand - CardSet::single(hq)) | CardSet::single(d9);
+    json["hands"][Seat::Hinterhand.index()] = serde_json::json!(hand.bits());
+    assert!(serde_json::from_value::<Game>(json).is_err());
 }
 
 /// Every game reached by legal actions survives the round trip. Changing any
