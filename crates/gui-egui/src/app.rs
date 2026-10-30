@@ -18,8 +18,31 @@ use crate::text;
 
 const CARD: Vec2 = Vec2::new(78.0, 117.0);
 const SMALL_CARD: Vec2 = Vec2::new(44.0, 66.0);
+/// Gap between the cards of the trick triangle.
+const TRICK_GAP: f32 = 8.0;
+/// Height of the player name below a trick card.
+const TRICK_LABEL_HEIGHT: f32 = 20.0;
 const TABLE_GREEN: Color32 = Color32::from_rgb(34, 102, 58);
 const TABLE_RED: Color32 = Color32::from_rgb(110, 22, 26);
+
+/// Size of the trick triangle: left and right card on top, the human's card
+/// below between them.
+fn trick_area() -> Vec2 {
+    Vec2::new(
+        3.0 * CARD.x + 2.0 * TRICK_GAP,
+        1.5 * CARD.y + TRICK_LABEL_HEIGHT,
+    )
+}
+
+/// Offset of a player's card in the trick triangle, towards that player's
+/// seat at the table: left opponent left, right opponent right, human below.
+fn trick_slot(player: PlayerId) -> Vec2 {
+    match player.0 {
+        0 => Vec2::new(CARD.x + TRICK_GAP, 0.5 * CARD.y),
+        1 => Vec2::ZERO,
+        _ => Vec2::new(2.0 * (CARD.x + TRICK_GAP), 0.0),
+    }
+}
 
 /// Draft of the "new series" dialog.
 #[derive(Clone, Debug)]
@@ -514,16 +537,7 @@ impl GrandCoachApp {
             };
             if !cards.is_empty() {
                 ui.label(RichText::new(title).color(Color32::WHITE));
-                ui.horizontal(|ui| {
-                    for played in cards {
-                        ui.vertical(|ui| {
-                            self.card_image(ui, played.card, CARD);
-                            ui.label(
-                                RichText::new(self.player(played.player)).color(Color32::WHITE),
-                            );
-                        });
-                    }
-                });
+                self.trick_triangle(ui, &cards);
             }
             if let Some(result) = &view.result {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -821,6 +835,29 @@ impl GrandCoachApp {
         }
     }
 
+    /// Draws a trick as a triangle: every card lies on the side of the
+    /// player who played it, in playing order (issue #24).
+    fn trick_triangle(&self, ui: &mut egui::Ui, trick: &[PlayedCard]) {
+        let (area, _) = ui.allocate_exact_size(trick_area(), egui::Sense::hover());
+        for played in trick {
+            let card = egui::Rect::from_min_size(area.min + trick_slot(played.player), CARD);
+            let label = text::card(&self.i18n, played.card);
+            ui.put(
+                card,
+                egui::Image::new(cards::image(&self.face(played.card))).fit_to_exact_size(CARD),
+            )
+            .on_hover_text(label);
+            let name = egui::Rect::from_min_size(
+                card.left_bottom(),
+                Vec2::new(CARD.x, TRICK_LABEL_HEIGHT),
+            );
+            ui.put(
+                name,
+                egui::Label::new(RichText::new(self.player(played.player)).color(Color32::WHITE)),
+            );
+        }
+    }
+
     fn card_image(&self, ui: &mut egui::Ui, card: Card, size: Vec2) {
         let label = text::card(&self.i18n, card);
         ui.add(egui::Image::new(cards::image(&self.face(card))).fit_to_exact_size(size))
@@ -972,6 +1009,40 @@ impl eframe::App for GrandCoachApp {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(
                 self.show_trick_until - now,
             ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(player: PlayerId) -> egui::Rect {
+        egui::Rect::from_min_size(egui::Pos2::ZERO + trick_slot(player), CARD)
+    }
+
+    #[test]
+    fn trick_cards_lie_towards_their_players() {
+        let (human, left, right) = (rect(PlayerId::HUMAN), rect(PlayerId(1)), rect(PlayerId(2)));
+        assert!(left.max.x < human.min.x && human.max.x < right.min.x);
+        assert!(human.min.y > left.min.y && human.min.y > right.min.y);
+        assert_eq!(left.min.y, right.min.y);
+        assert_eq!(human.center().x, trick_area().x / 2.0);
+    }
+
+    #[test]
+    fn trick_cards_and_names_fit_without_overlap() {
+        let area = egui::Rect::from_min_size(egui::Pos2::ZERO, trick_area());
+        let with_name = |p| {
+            let r = rect(p);
+            egui::Rect::from_min_max(r.min, r.max + Vec2::new(0.0, TRICK_LABEL_HEIGHT))
+        };
+        let all = PlayerId::ALL.map(with_name);
+        for (i, a) in all.iter().enumerate() {
+            assert!(area.contains_rect(*a), "{i} leaves the area");
+            for b in &all[i + 1..] {
+                assert!(!a.intersects(*b), "{a:?} overlaps {b:?}");
+            }
         }
     }
 }
