@@ -98,6 +98,9 @@ pub struct GrandCoachApp {
     /// Until when the last completed trick stays in the middle.
     show_trick_until: f64,
     new_series: Option<NewSeries>,
+    /// Developer option: show the seed in the status line and let the
+    /// "new series" dialog set it.
+    show_seed: bool,
 }
 
 impl GrandCoachApp {
@@ -118,6 +121,7 @@ impl GrandCoachApp {
             ready: None,
             show_trick_until: 0.0,
             new_series: None,
+            show_seed: false,
         }
     }
 
@@ -134,6 +138,11 @@ impl GrandCoachApp {
     /// Switches the card faces; the game keeps running.
     pub fn set_deck(&mut self, deck: Deck) {
         self.deck = deck;
+    }
+
+    /// Shows or hides the seed (developer option, off by default).
+    pub fn set_show_seed(&mut self, show: bool) {
+        self.show_seed = show;
     }
 
     /// Sends a command to the session and keeps a rejection for display.
@@ -269,6 +278,11 @@ impl GrandCoachApp {
                     let label = self.t(deck.message());
                     ui.radio_value(&mut self.deck, deck, label);
                 }
+                ui.separator();
+                ui.label(RichText::new(self.t("setting-developer")).strong());
+                let label = self.t("setting-show-seed");
+                ui.checkbox(&mut self.show_seed, label)
+                    .on_hover_text(self.t("seed-description"));
             });
         });
     }
@@ -364,11 +378,14 @@ impl GrandCoachApp {
                     i.tf("status-opponents", &[("mode", i.t("mode-mephisto").into())])
                 }
             });
-            ui.separator();
-            ui.label(i.tf(
-                "status-seed",
-                &[("seed", view.config.seed.to_string().into())],
-            ));
+            if self.show_seed {
+                ui.separator();
+                ui.label(i.tf(
+                    "status-seed",
+                    &[("seed", view.config.seed.to_string().into())],
+                ))
+                .on_hover_text(i.t("seed-description"));
+            }
         });
     }
 
@@ -874,6 +891,7 @@ impl GrandCoachApp {
         let mut open = true;
         let mut start = false;
         let mut cancel = false;
+        let seed = parse_seed(&draft.seed);
         egui::Window::new(self.t("new-series-title"))
             .collapsible(false)
             .resizable(false)
@@ -917,24 +935,31 @@ impl GrandCoachApp {
                 for note in notes {
                     ui.label(RichText::new(self.t(note)).small().weak());
                 }
-                ui.separator();
+                if self.show_seed {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let label = ui
+                            .label(self.t("series-seed"))
+                            .on_hover_text(self.t("seed-description"));
+                        ui.text_edit_singleline(&mut draft.seed)
+                            .labelled_by(label.id)
+                            .on_hover_text(self.t("seed-description"));
+                    });
+                    let note = if seed.is_some() {
+                        RichText::new(self.t("seed-description")).weak()
+                    } else {
+                        RichText::new(self.t("seed-invalid")).color(Color32::from_rgb(200, 40, 40))
+                    };
+                    ui.label(note.small());
+                }
                 ui.horizontal(|ui| {
-                    ui.label(self.t("series-seed"));
-                    ui.text_edit_singleline(&mut draft.seed);
-                });
-                ui.horizontal(|ui| {
-                    start = ui.button(self.t("button-start")).clicked();
+                    start = ui
+                        .add_enabled(seed.is_some(), egui::Button::new(self.t("button-start")))
+                        .clicked();
                     cancel = ui.button(self.t("button-cancel")).clicked();
                 });
             });
-        if start {
-            let seed = draft.seed.trim().parse().unwrap_or_else(|_| {
-                // Not a number: derive a seed from the text, still reproducible.
-                draft
-                    .seed
-                    .bytes()
-                    .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(u64::from(b)))
-            });
+        if start && let Some(seed) = seed {
             self.session = Session::new(SessionConfig {
                 seed,
                 series: if draft.free {
@@ -961,6 +986,12 @@ impl GrandCoachApp {
             self.new_series = Some(draft);
         }
     }
+}
+
+/// The seed typed in the "new series" dialog: a whole number from 0 to
+/// `u64::MAX`, surrounding spaces ignored.
+fn parse_seed(text: &str) -> Option<u64> {
+    text.trim().parse().ok()
 }
 
 /// Message id of a strength level's name.
@@ -1019,6 +1050,15 @@ mod tests {
 
     fn rect(player: PlayerId) -> egui::Rect {
         egui::Rect::from_min_size(egui::Pos2::ZERO + trick_slot(player), CARD)
+    }
+
+    #[test]
+    fn seeds_are_whole_numbers_within_u64() {
+        assert_eq!(parse_seed(" 0 "), Some(0));
+        assert_eq!(parse_seed("18446744073709551615"), Some(u64::MAX));
+        for invalid in ["", " -1", "18446744073709551616", "1.5", "abc", "1 2"] {
+            assert_eq!(parse_seed(invalid), None, "{invalid:?}");
+        }
     }
 
     #[test]

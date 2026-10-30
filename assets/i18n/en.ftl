@@ -14,6 +14,8 @@ setting-deck = Card faces
 deck-french4 = French, four colours (tournament)
 deck-french2 = French, two colours
 deck-german = German suits (Altenburg pattern)
+setting-developer = Developer options
+setting-show-seed = Show seed
 
 ## New series
 
@@ -23,6 +25,8 @@ series-games = games
 series-free = Free play
 option-kontra-re = With Kontra and Re
 series-seed = Seed:
+seed-description = The seed is the start value of the random generator: the same seed deals the same cards and, when you play the same way, makes the opponents decide the same way, so a series can be replayed. Allowed are whole numbers from 0 to 18446744073709551615.
+seed-invalid = Not a valid seed: enter a whole number from 0 to 18446744073709551615.
 button-start = Start
 button-cancel = Cancel
 

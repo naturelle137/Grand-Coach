@@ -2,8 +2,9 @@
 
 //! Starts the Grand-Coach window.
 //!
-//! The series seed defaults to the current time and is shown in the status
-//! line; `GRAND_COACH_SEED` fixes it to replay a series.
+//! The series seed defaults to the current time; `GRAND_COACH_SEED` fixes it
+//! to replay a series and also turns on the developer option that shows the
+//! seed (otherwise off, see Settings).
 //!
 //! Smoke test: with `GRAND_COACH_SCREENSHOT=<file.ppm>` the window saves a
 //! screenshot after `GRAND_COACH_SCREENSHOT_DELAY` seconds (default 3) and
@@ -54,14 +55,14 @@ impl eframe::App for Screenshot {
 }
 
 fn main() -> eframe::Result {
-    let seed = std::env::var("GRAND_COACH_SEED")
+    let fixed_seed = std::env::var("GRAND_COACH_SEED")
         .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs())
-        });
+        .and_then(|s| s.parse().ok());
+    let seed = fixed_seed.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs())
+    });
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Grand-Coach")
@@ -73,13 +74,14 @@ fn main() -> eframe::Result {
         "Grand-Coach",
         options,
         Box::new(move |cc| {
-            let app = GrandCoachApp::new(
+            let mut app = GrandCoachApp::new(
                 &cc.egui_ctx,
                 SessionConfig {
                     seed,
                     ..SessionConfig::default()
                 },
             );
+            app.set_show_seed(fixed_seed.is_some());
             Ok(match std::env::var_os("GRAND_COACH_SCREENSHOT") {
                 Some(path) => Box::new(Screenshot {
                     app,

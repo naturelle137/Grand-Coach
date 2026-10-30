@@ -14,6 +14,8 @@ setting-deck = Kartenbild
 deck-french4 = Französisch, vierfarbig (Turnierbild)
 deck-french2 = Französisch, zweifarbig
 deck-german = Deutsches Blatt (Altenburger Bild)
+setting-developer = Entwickleroptionen
+setting-show-seed = Seed anzeigen
 
 ## New series
 
@@ -23,6 +25,8 @@ series-games = Spiele
 series-free = Freies Spiel
 option-kontra-re = Mit Kontra und Re
 series-seed = Startwert (Seed):
+seed-description = Der Seed ist der Startwert des Zufallsgenerators: Derselbe Seed teilt dieselben Karten aus und lässt die Gegner gleich entscheiden, wenn du gleich spielst; so lässt sich eine Serie wiederholen. Erlaubt sind ganze Zahlen von 0 bis 18446744073709551615.
+seed-invalid = Kein gültiger Seed: Gib eine ganze Zahl von 0 bis 18446744073709551615 ein.
 button-start = Starten
 button-cancel = Abbrechen
 
