@@ -822,3 +822,55 @@ fn seed_is_shown_and_set_only_with_the_developer_option() {
     assert_eq!(view(&harness).config.seed, u64::MAX);
     harness.get_by_label("Seed 18446744073709551615");
 }
+
+/// At launch the "new series" dialog shows the series settings (issue #25).
+/// The opponents wait until it closes; starting it unchanged keeps the
+/// series and its seed, cancelling keeps the series too.
+#[test]
+fn launch_shows_the_new_series_settings() {
+    let config = |seed| SessionConfig {
+        seed,
+        series: SeriesLength::Fixed(12),
+        kontra_re: false,
+        opponents: Opponents::Levels([Level::Rookie, Level::Easy]),
+    };
+    // A deal in which an opponent decides first.
+    let seed = (0..100)
+        .find(|&s| Session::new(config(s)).view().opponent_to_move)
+        .expect("an opponent moves first");
+    for close in ["Starten", "Abbrechen"] {
+        let mut harness = Harness::builder()
+            .with_size([1600.0, 1000.0])
+            .build_eframe(move |cc| {
+                let mut app = GrandCoachApp::new(&cc.egui_ctx, config(seed));
+                app.show_new_series();
+                app
+            });
+        harness.state_mut().opponent_delay = 0.0;
+        for _ in 0..20 {
+            harness.run_steps(1);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(harness.state().new_series_open());
+        harness.get_by_label("Neue Serie");
+        let checked = |harness: &Harness<'_, GrandCoachApp>, role, label| {
+            harness
+                .get_by_role_and_label(role, label)
+                .accesskit_node()
+                .toggled()
+                == Some(egui::accesskit::Toggled::True)
+        };
+        assert!(checked(
+            &harness,
+            Role::RadioButton,
+            "Serie mit fester Spielzahl"
+        ));
+        assert!(!checked(&harness, Role::CheckBox, "Mit Kontra und Re"));
+        assert!(view(&harness).bidding.is_empty(), "opponents waited");
+        button(&mut harness, close);
+        assert!(!harness.state().new_series_open());
+        assert_eq!(view(&harness).config, config(seed));
+        settle(&mut harness);
+        assert!(!view(&harness).opponent_to_move);
+    }
+}
