@@ -13,7 +13,7 @@
 //! labels, as in `tests/gui.rs`. Add a scenario when a frontend change needs
 //! its own picture.
 
-use eframe::egui::Role;
+use eframe::egui::{Key, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use gui_egui::GrandCoachApp;
@@ -28,6 +28,9 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("trick", trick),
     ("trick-complete", trick_complete),
     ("result", result),
+    ("settings", settings),
+    ("new-series", new_series),
+    ("new-series-seed", new_series_seed),
 ];
 
 /// The first decision of the series: the human bids.
@@ -52,6 +55,45 @@ fn trick_complete(harness: &mut Harness<'_, GrandCoachApp>) {
 /// The first game is over and its result is shown.
 fn result(harness: &mut Harness<'_, GrandCoachApp>) {
     play_until(harness, |view, _| view.acting.is_none());
+}
+
+/// The settings menu with the pointer on the developer option "Seed
+/// anzeigen", whose tooltip explains the seed.
+fn settings(harness: &mut Harness<'_, GrandCoachApp>) {
+    settle(harness);
+    click(harness, Role::Button, "Einstellungen");
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Seed anzeigen")
+        .hover();
+    // Tooltips appear after a short delay.
+    harness.run_steps(8);
+}
+
+/// The "new series" dialog by default: no seed.
+fn new_series(harness: &mut Harness<'_, GrandCoachApp>) {
+    settle(harness);
+    click(harness, Role::Button, "Spiel");
+    click(harness, Role::Button, "Neue Serie …");
+}
+
+/// The "new series" dialog with "Seed anzeigen" on and an invalid seed.
+fn new_series_seed(harness: &mut Harness<'_, GrandCoachApp>) {
+    settle(harness);
+    click(harness, Role::Button, "Einstellungen");
+    click(harness, Role::CheckBox, "Seed anzeigen");
+    harness.key_press(Key::Escape);
+    harness.run_steps(4);
+    click(harness, Role::Button, "Spiel");
+    click(harness, Role::Button, "Neue Serie …");
+    let input = "Startwert (Seed):";
+    harness
+        .get_by_role_and_label(Role::TextInput, input)
+        .focus();
+    harness.run_steps(1);
+    harness
+        .get_by_role_and_label(Role::TextInput, input)
+        .type_text("x");
+    harness.run_steps(4);
 }
 
 fn main() {
@@ -150,6 +192,11 @@ fn play_until(harness: &mut Harness<'_, GrandCoachApp>, stop: impl Fn(&TableView
         }
     }
     panic!("scenario did not reach its state");
+}
+
+fn click(harness: &mut Harness<'_, GrandCoachApp>, role: Role, label: &str) {
+    harness.get_by_role_and_label(role, label).click();
+    harness.run_steps(4);
 }
 
 /// German card label as shown to assistive technology.

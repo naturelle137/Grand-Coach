@@ -40,8 +40,8 @@ Linux):
 cargo run --locked --release -p gui-egui
 ```
 
-The status line shows the series seed; `GRAND_COACH_SEED=<n>` starts that
-series again. The card faces in `assets/cards/` are generated; after
+With "Settings → Show seed" the status line shows the series seed;
+`GRAND_COACH_SEED=<n>` starts that series again and turns the option on. The card faces in `assets/cards/` are generated; after
 changing `tools/cardgen`, run `cargo run --locked -p cardgen` and commit
 the result (a test compares them). After every `Cargo.lock` change, run
 `cargo fetch --locked` and `cargo run --locked -p notices` and commit

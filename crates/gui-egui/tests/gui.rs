@@ -5,7 +5,7 @@
 
 use eframe::egui::{self, Role};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use gui_egui::{Deck, GrandCoachApp, Language};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
@@ -473,7 +473,6 @@ fn table_shows_phase_turn_announcements_tricks_and_sheet() {
     harness.get_by_label("Am Zug: Du");
     harness.get_by_label("Spielliste");
     harness.get_by_label("Letzter Stich");
-    harness.get_by_label("Seed 21");
     // The ten hand cards are buttons.
     assert!(harness.get_all_by_role(Role::Button).count() >= 10);
     let mut rng = ChaCha8Rng::seed_from_u64(21);
@@ -761,4 +760,65 @@ fn opponent_levels_are_chosen_per_opponent() {
     ));
     assert_eq!(harness.state().back(), "back.svg");
     assert_eq!(harness.state().table_color(), TABLE_GREEN);
+}
+
+/// The seed is a developer option: hidden by default, shown and settable
+/// after "Seed anzeigen", and only whole numbers within `u64` start a series.
+#[test]
+fn seed_is_shown_and_set_only_with_the_developer_option() {
+    let config = SessionConfig {
+        seed: 21,
+        series: SeriesLength::Fixed(36),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    let seed_input = "Startwert (Seed):";
+    assert!(harness.query_by_label("Seed 21").is_none());
+    button(&mut harness, "Spiel");
+    button(&mut harness, "Neue Serie …");
+    assert!(
+        harness
+            .query_by_role_and_label(Role::TextInput, seed_input)
+            .is_none()
+    );
+    button(&mut harness, "Starten");
+    assert_eq!(view(&harness).config.seed, 22);
+    assert!(harness.query_by_label("Seed 22").is_none());
+
+    button(&mut harness, "Einstellungen");
+    click(&mut harness, Role::CheckBox, "Seed anzeigen");
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(4);
+    harness.get_by_label("Seed 22");
+    button(&mut harness, "Spiel");
+    button(&mut harness, "Neue Serie …");
+    harness.get_by_label_contains("ganze Zahlen von 0 bis 18446744073709551615");
+    let set_seed = |harness: &mut Harness<'_, GrandCoachApp>, text: &str| {
+        let input = harness.get_by_role_and_label(Role::TextInput, seed_input);
+        input.focus();
+        harness.run_steps(1);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness
+            .get_by_role_and_label(Role::TextInput, seed_input)
+            .type_text(text);
+        harness.run_steps(4);
+    };
+    let start_disabled = |harness: &Harness<'_, GrandCoachApp>| {
+        harness
+            .get_by_role_and_label(Role::Button, "Starten")
+            .accesskit_node()
+            .is_disabled()
+    };
+    assert!(!start_disabled(&harness));
+    for invalid in ["abc", "-1", "18446744073709551616"] {
+        set_seed(&mut harness, invalid);
+        assert!(start_disabled(&harness), "{invalid}");
+        harness.get_by_label_contains("Kein gültiger Seed");
+    }
+    set_seed(&mut harness, "18446744073709551615");
+    assert!(!start_disabled(&harness));
+    button(&mut harness, "Starten");
+    assert_eq!(view(&harness).config.seed, u64::MAX);
+    harness.get_by_label("Seed 18446744073709551615");
 }
