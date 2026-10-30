@@ -53,6 +53,7 @@ fn first_card(seed: u64) -> Option<PlayerView> {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn decisions_are_reproducible_and_seeded() {
     let views: Vec<PlayerView> = (0..12).filter_map(first_card).take(4).collect();
     assert_eq!(views.len(), 4);
@@ -75,6 +76,7 @@ fn decisions_are_reproducible_and_seeded() {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn every_level_completes_seeded_games() {
     for seed in 0..2 {
         for players in [

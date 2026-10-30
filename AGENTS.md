@@ -78,17 +78,20 @@ Translations live in `assets/i18n/`.
 All checks run through one script (D-30, `docs/testing.md`):
 
 ```sh
-scripts/check.sh          # full gate: lint + test
+scripts/check.sh          # full gate as in CI: lint + test
 scripts/check.sh lint     # whitespace, SPDX, rustfmt, markdownlint, shellcheck, actionlint
-scripts/check.sh test     # clippy and tests, with and without features
-scripts/check.sh deep     # 1,000,000 seeded random games (weekly in CI)
+scripts/check.sh test     # clippy (also without features) and all tests incl. slow ones
+scripts/check.sh push --base origin/main  # pre-push: lint, clippy, fast tests of affected crates
+scripts/check.sh deep     # 1,000,000 random games, 100 Mephisto games (weekly in CI)
 ```
 
-The git hooks in `.githooks/` run `quick` before each commit and `full`
-before each push (tests only when code files changed); Claude Code
+The git hooks in `.githooks/` run `quick` before each commit and `push`
+before each push (fast tests of the affected crates only); Claude Code
 activates them via `.claude/settings.json`. CI always runs `lint`, and
 `test` on Linux and Windows plus an MSRV check when code changed; its job
-`ci-ok` is required to merge into `main`. Locally missing linters are
+`ci-ok` is required to merge into `main`. Tests taking 2 s or more carry
+`#[ignore = "slow: CI only (docs/testing.md)"]`: hooks skip them, CI and
+`full` run them. Locally missing linters are
 skipped with a warning; CI runs them all. `cargo test` includes 10,000 seeded random
 games (`crates/skat-core/tests/random_games.rs`). For documentation
 changes, also check relative links (not automated).

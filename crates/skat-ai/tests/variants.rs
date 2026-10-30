@@ -120,24 +120,46 @@ fn the_goldfish_forgets_only_older_tricks() {
     assert_eq!(differs, 1, "forgetting never changed a card");
 }
 
+/// Default number of Mephisto games; `SKAT_MEPHISTO_GAMES` overrides it for
+/// the scheduled deep run (see `docs/testing.md`).
+const MEPHISTO_GAMES: u64 = 3;
+
+fn mephisto_games() -> u64 {
+    match std::env::var("SKAT_MEPHISTO_GAMES") {
+        Ok(n) => n.parse().expect("SKAT_MEPHISTO_GAMES must be a number"),
+        Err(_) => MEPHISTO_GAMES,
+    }
+}
+
 /// Mephisto on every seat: it only takes a game it wins double-dummy, and
-/// as declarer it plays that out against any defence.
+/// as declarer it plays that out against any defence. With every card
+/// known and a node budget instead of a time limit this is exact and
+/// reproducible, so a lost game is a bug, not bad luck. Only a game in
+/// which the rules of thumb decided (exhausted budget) may be lost; such
+/// games are counted and stay rare.
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn mephisto_never_loses_a_game_it_declares() {
-    let mut declared = 0;
-    for seed in 0..3 {
+    let games = mephisto_games();
+    let (mut declared, mut fallbacks) = (0, 0);
+    for seed in 0..games {
         let mut game = Game::new(seed, RULES);
+        let mut fallback = false;
         while let Some(seat) = game.current_seat() {
             let d = Mephisto.decide(&game, None).unwrap();
-            assert!(!d.fallback, "seed {seed}: {d:?}");
+            fallback |= d.fallback;
             assert!(game.view(seat).legal_actions.contains(&d.action));
             game.apply(d.action).unwrap();
         }
         if let Some(result) = game.result() {
             declared += 1;
-            assert!(result.won, "seed {seed}: {result:?}");
+            assert!(result.won || fallback, "seed {seed}: {result:?}");
         }
+        fallbacks += u64::from(fallback);
         assert_eq!(Mephisto.decide(&game, None), None);
     }
+    eprintln!("{games} Mephisto games: {declared} declared, {fallbacks} with a fallback");
     assert!(declared > 0);
+    // At most 1 in 20 games, so none in the default run.
+    assert!(fallbacks * 20 <= games, "{fallbacks} of {games} games");
 }

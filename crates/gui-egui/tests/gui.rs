@@ -145,6 +145,7 @@ fn announce(harness: &mut Harness<'_, GrandCoachApp>, a: Announcement) {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn series_played_entirely_by_clicks() {
     let mut contracts = Vec::new();
     for seed in 0..4 {
@@ -363,6 +364,7 @@ fn kind(action: Action) -> String {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn every_decision_and_variant_is_clickable() {
     let mut seen = std::collections::BTreeSet::new();
     let mut hand_variants = std::collections::BTreeMap::new();
@@ -546,6 +548,7 @@ fn ouvert_kontra_round() -> (SessionConfig, Vec<Command>) {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn kein_kontra_before_an_opponents_ouvert_game_by_click() {
     let (config, commands) = ouvert_kontra_round();
     let mut harness = harness(config);

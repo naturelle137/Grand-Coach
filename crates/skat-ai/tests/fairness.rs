@@ -247,6 +247,7 @@ fn rookie_is_fair_and_covers_every_phase() {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn goldfish_is_fair_and_covers_every_phase() {
     check_profile("Goldfish", Profile::GOLDFISH, 1, 1);
 }
@@ -257,11 +258,13 @@ fn easy_is_fair_and_covers_every_phase() {
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn medium_is_fair_and_covers_every_phase() {
     check_level(Level::Medium, 2, 2);
 }
 
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn strong_is_fair_and_covers_every_phase() {
     check_level(Level::Strong, 1, 1);
 }

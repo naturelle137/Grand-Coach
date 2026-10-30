@@ -414,6 +414,7 @@ fn each_opponent_has_its_own_level() {
 /// Background moves: the same move as `AdvanceOpponent`; a move computed
 /// for an earlier position is rejected without change.
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn opponent_jobs_match_advance_and_reject_stale_moves() {
     for seed in 0..3 {
         let config = SessionConfig {
@@ -550,14 +551,14 @@ fn goldfish_mode_draws_one_forgetful_opponent() {
 
 /// Mephisto mode: every computer decision before card play sees all
 /// cards; in card play the computer declarer does and its partner does
-/// not, and against the human declarer both defenders do.
+/// not, and against the human declarer both defenders do. Seed 2 has a
+/// computer declarer, seed 21 the human; that Mephisto never loses is
+/// checked broadly in `skat-ai/tests/variants.rs` (deep run).
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn mephisto_mode_sees_all_cards_where_configured() {
     let mut cases = BTreeSet::new();
-    for seed in 0..40 {
-        if cases.len() == 3 {
-            break;
-        }
+    for seed in [2, 21] {
         let config = SessionConfig {
             opponents: Opponents::Mephisto,
             ..config(seed, SeriesLength::Fixed(1), true)
