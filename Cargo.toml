@@ -5,6 +5,7 @@ members = [
     "crates/skat-core",
     "crates/skat-analysis",
     "crates/skat-ai",
+    "crates/skat-coach",
     "crates/skat-app",
     "crates/gui-egui",
     "tools/cardgen",
@@ -23,6 +24,7 @@ publish = false
 skat-core = { path = "crates/skat-core" }
 skat-analysis = { path = "crates/skat-analysis" }
 skat-ai = { path = "crates/skat-ai" }
+skat-coach = { path = "crates/skat-coach" }
 skat-app = { path = "crates/skat-app" }
 rand_chacha = "0.10"
 serde = { version = "1", features = ["derive"] }

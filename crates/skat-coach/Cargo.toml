@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: EUPL-1.2
+[package]
+name = "skat-coach"
+description = "Structured, analysis-backed explanations of the Grand-Coach live coach"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+serde = ["dep:serde", "skat-core/serde", "skat-analysis/serde"]
+
+[dependencies]
+skat-core.workspace = true
+skat-analysis.workspace = true
+serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true
