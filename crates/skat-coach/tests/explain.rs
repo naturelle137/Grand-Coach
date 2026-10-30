@@ -265,6 +265,27 @@ fn bidding_early_uncertainty() {
 }
 
 #[test]
+fn answering_holds_or_passes() {
+    // MH said 18; VH (all Jacks, six Kreuz) answers with hold or pass.
+    let mut g = game(standard_deal(), false);
+    run(&mut g, &[Action::Bid(18)]);
+    let view = current_view(&g);
+    assert_eq!(view.legal_actions, vec![Action::Hold, Action::Pass]);
+    let budget = Budget {
+        samples: 1,
+        ..SMALL
+    };
+    let (_, e) = coach(&view, budget, 12);
+    assert_eq!((e.decision, e.role), (Decision::Answer, Role::Bidder));
+    assert!(known(&e).contains(&Observation::BidShown {
+        seat: Seat::Mittelhand,
+        value: 18
+    }));
+    // With a sure game, holding is best.
+    assert_eq!(e.best().unwrap().action, Action::Hold);
+}
+
+#[test]
 fn hand_or_pickup_differs_in_points_only() {
     // VH holds all Jacks and six Kreuz: every game VH can sensibly
     // announce is won with or without the Skat, so the options differ in
