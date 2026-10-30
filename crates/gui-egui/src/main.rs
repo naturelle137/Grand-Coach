@@ -4,7 +4,8 @@
 //!
 //! The series seed defaults to the current time; `GRAND_COACH_SEED` fixes it
 //! to replay a series and also turns on the developer option that shows the
-//! seed (otherwise off, see Settings).
+//! seed (otherwise off, see Settings). The window opens with the "new
+//! series" dialog showing the series settings.
 //!
 //! Smoke test: with `GRAND_COACH_SCREENSHOT=<file.ppm>` the window saves a
 //! screenshot after `GRAND_COACH_SCREENSHOT_DELAY` seconds (default 3) and
@@ -82,6 +83,7 @@ fn main() -> eframe::Result {
                 },
             );
             app.set_show_seed(fixed_seed.is_some());
+            app.show_new_series();
             Ok(match std::env::var_os("GRAND_COACH_SCREENSHOT") {
                 Some(path) => Box::new(Screenshot {
                     app,

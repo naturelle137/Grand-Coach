@@ -145,6 +145,18 @@ impl GrandCoachApp {
         self.show_seed = show;
     }
 
+    /// Opens the "new series" dialog with the current settings and seed, so
+    /// starting it unchanged plays exactly the current series. The window
+    /// does this at launch so the series settings are visible (issue #25).
+    pub fn show_new_series(&mut self) {
+        self.open_new_series_with(self.session.config().seed);
+    }
+
+    /// Whether the "new series" dialog is open.
+    pub fn new_series_open(&self) -> bool {
+        self.new_series.is_some()
+    }
+
     /// Sends a command to the session and keeps a rejection for display.
     fn send(&mut self, command: Command, now: f64) {
         let result = self.session.execute(command);
@@ -287,7 +299,12 @@ impl GrandCoachApp {
         });
     }
 
+    /// Opens the "new series" dialog proposing the next seed.
     fn open_new_series(&mut self) {
+        self.open_new_series_with(self.session.config().seed.wrapping_add(1));
+    }
+
+    fn open_new_series_with(&mut self, seed: u64) {
         let config = self.session.config();
         let (free, games) = match config.series {
             SeriesLength::Fixed(n) => (false, n),
@@ -306,7 +323,7 @@ impl GrandCoachApp {
                 Opponents::Levels(levels) => levels,
                 _ => [Level::Medium; 2],
             },
-            seed: config.seed.wrapping_add(1).to_string(),
+            seed: seed.to_string(),
         });
     }
 
@@ -893,6 +910,8 @@ impl GrandCoachApp {
         let mut cancel = false;
         let seed = parse_seed(&draft.seed);
         egui::Window::new(self.t("new-series-title"))
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -1017,7 +1036,10 @@ fn level_description(level: Level) -> &'static str {
 impl eframe::App for GrandCoachApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = ui.input(|i| i.time);
-        self.drive_opponents(ui.ctx(), now);
+        // The opponents wait while the "new series" dialog is open.
+        if self.new_series.is_none() {
+            self.drive_opponents(ui.ctx(), now);
+        }
         let view = self.session.view();
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui, &view, now));
         egui::Panel::top("status").show(ui, |ui| self.status(ui, &view));

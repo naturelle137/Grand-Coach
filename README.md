@@ -59,8 +59,9 @@ Weitere Prüfungen stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
 cargo run --release -p gui-egui
 ```
 
-Du spielst unten, die Gegner sitzen links und rechts. Über „Spiel → Neue
-Serie …“ wählst du feste Spielzahl (z. B. 36) oder freies Spiel, Kontra/Re
+Du spielst unten, die Gegner sitzen links und rechts. Beim Start öffnet sich
+„Neue Serie“ mit den Einstellungen der ersten Serie; die Gegner warten, bis
+du startest oder abbrichst. Über „Spiel → Neue Serie …“ wählst du feste Spielzahl (z. B. 36) oder freies Spiel, Kontra/Re
 und die Gegner (Stärke je Gegner, Goldfisch oder Mephisto); unter
 „Einstellungen“ Sprache und Kartenbild. Die Entwickleroption „Seed anzeigen“
 zeigt den Startwert der Serie und macht ihn in „Neue Serie …“ einstellbar
@@ -139,8 +140,9 @@ Further checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md).
 cargo run --release -p gui-egui
 ```
 
-You play at the bottom; the opponents sit left and right. "Game → New
-series …" chooses a fixed number of games (e.g. 36) or free play,
+You play at the bottom; the opponents sit left and right. At launch, "New
+series" opens with the settings of the first series; the opponents wait
+until you start or cancel. "Game → New series …" chooses a fixed number of games (e.g. 36) or free play,
 Kontra/Re and the opponents (a level for each, Goldfish or Mephisto);
 "Settings" switches language and card faces. The developer option "Show
 seed" shows the series seed and lets "New series …" set it (a whole number

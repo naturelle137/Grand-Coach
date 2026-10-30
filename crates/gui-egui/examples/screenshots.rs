@@ -24,6 +24,7 @@ const SIZE: [f32; 2] = [1280.0, 820.0];
 type Scenario = fn(&mut Harness<'_, GrandCoachApp>);
 
 const SCENARIOS: &[(&str, Scenario)] = &[
+    ("launch", launch),
     ("bidding", bidding),
     ("trick", trick),
     ("trick-complete", trick_complete),
@@ -32,6 +33,12 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("new-series", new_series),
     ("new-series-seed", new_series_seed),
 ];
+
+/// The window at launch: the "new series" dialog shows the series settings
+/// and the opponents wait (`harness` opens it like `main`).
+fn launch(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.run_steps(4);
+}
 
 /// The first decision of the series: the human bids.
 fn bidding(harness: &mut Harness<'_, GrandCoachApp>) {
@@ -116,7 +123,7 @@ fn main() {
         if !wanted.is_empty() && !wanted.iter().any(|w| w == name) {
             continue;
         }
-        let mut harness = harness();
+        let mut harness = harness(*name == "launch");
         scenario(&mut harness);
         harness.run_steps(4);
         let path = format!("{out}/{name}.png");
@@ -129,7 +136,9 @@ fn main() {
     }
 }
 
-fn harness() -> Harness<'static, GrandCoachApp> {
+/// The app with a small series; `launch` opens the "new series" dialog
+/// before the first frame, as `main` does.
+fn harness(launch: bool) -> Harness<'static, GrandCoachApp> {
     let config = SessionConfig {
         seed: 21,
         series: SeriesLength::Fixed(2),
@@ -139,7 +148,13 @@ fn harness() -> Harness<'static, GrandCoachApp> {
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .wgpu()
-        .build_eframe(move |cc| GrandCoachApp::new(&cc.egui_ctx, config));
+        .build_eframe(move |cc| {
+            let mut app = GrandCoachApp::new(&cc.egui_ctx, config);
+            if launch {
+                app.show_new_series();
+            }
+            app
+        });
     // Simulated time (0.25 s per frame): opponents wait 2 s after the human's
     // card, so a completed trick stays visible in the middle.
     harness.state_mut().opponent_delay = 2.0;
