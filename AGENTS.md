@@ -47,6 +47,7 @@ crates/skat-coach     structured explanations (text keys + parameters), no texts
 crates/skat-app       application interface: session, commands, events, view models
 crates/gui-egui       egui frontend
 tools/cardgen         generates card SVGs into assets/cards/
+tools/notices         generates THIRD-PARTY-NOTICES from Cargo.lock (D-43)
 ```
 
 Dependencies only point downwards: core ← analysis ← ai/coach ← app ← gui.
@@ -105,6 +106,7 @@ The desktop app is the binary `grand-coach` of `crates/gui-egui`
 cargo run --locked --release -p gui-egui      # start the game
 GRAND_COACH_SEED=42 cargo run -p gui-egui     # replay a series seed
 cargo run --locked -p cardgen                 # regenerate assets/cards/
+cargo run --locked -p notices                 # regenerate THIRD-PARTY-NOTICES
 cargo run --locked --release -p skat-analysis --example bench  # analysis latency
 cargo run --locked --release -p skat-ai --example latency       # AI latency per level
 cargo run --locked --release -p skat-ai --example calibrate -- validation medium strong 200 10 0
@@ -113,7 +115,8 @@ cargo run --locked --release -p skat-ai --example calibrate -- validation medium
 On Linux the window needs EGL/GL and Wayland or X11 client libraries
 (Fedora: `mesa-libEGL mesa-libGL libwayland-egl libxkbcommon`). After
 changing `tools/cardgen`, regenerate and commit `assets/cards/`; a test
-fails otherwise.
+fails otherwise. After every `Cargo.lock` change, run `cargo fetch --locked`
+and `notices`, and commit `THIRD-PARTY-NOTICES`; a test fails otherwise.
 
 ## Testing
 

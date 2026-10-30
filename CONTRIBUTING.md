@@ -43,7 +43,9 @@ cargo run --locked --release -p gui-egui
 The status line shows the series seed; `GRAND_COACH_SEED=<n>` starts that
 series again. The card faces in `assets/cards/` are generated; after
 changing `tools/cardgen`, run `cargo run --locked -p cardgen` and commit
-the result (a test compares them).
+the result (a test compares them). After every `Cargo.lock` change, run
+`cargo fetch --locked` and `cargo run --locked -p notices` and commit
+`THIRD-PARTY-NOTICES` (a test checks that it lists every crate).
 
 All checks are bundled in
 one script; activate the git hooks once per clone so it runs automatically
@@ -159,3 +161,6 @@ Not allowed: GPL, AGPL or LGPL only (no allowed alternative), SSPL, BUSL and
 other source-available licences, NC and ND licences, proprietary files and
 files of unclear origin. Anything not listed needs the maintainer's approval
 and a new D entry in [docs/decisions.md](docs/decisions.md).
+
+Every binary or package handed out must ship
+[THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) next to the program (D-43).
