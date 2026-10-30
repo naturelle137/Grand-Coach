@@ -8,9 +8,11 @@ mod common;
 
 use common::*;
 use skat_analysis::sampling::Diagnostic;
+use skat_analysis::sampling::Place;
 use skat_analysis::sampling::World;
 use skat_analysis::{
-    Analysis, Budget, Cancel, Estimate, Status, analyze, analyze_forgetful, analyze_known,
+    Analysis, Budget, Cancel, CardClass, Estimate, Status, analyze, analyze_forgetful,
+    analyze_known,
 };
 use skat_core::{
     Action, Announcement, CardSet, Deal, Game, GameType, Phase, PlayerView, RuleConfig, Seat, Suit,
@@ -288,6 +290,74 @@ fn card_play_options_and_exact_results() {
     assert_complete(&view, &a);
     assert!(!a.effort.enumerated);
     assert!(a.options.iter().all(|o| !o.estimate.unwrap().exact));
+}
+
+#[test]
+fn inferences_count_hidden_trumps_or_jacks() {
+    // Bidding: MH holds no Jack, so the four Jacks are with VH, HH or in the
+    // Skat; every hidden place gets an estimate, MH itself none.
+    let g = game(false);
+    let view = current_view(&g);
+    let a = analyze(&view, SMALL, 1, None).unwrap();
+    let holders: Vec<Place> = a.inferences.iter().map(|i| i.holder).collect();
+    assert_eq!(
+        holders,
+        [
+            Place::Seat(Seat::Vorhand),
+            Place::Seat(Seat::Hinterhand),
+            Place::Skat
+        ]
+    );
+    let total: f64 = a.inferences.iter().map(|i| i.expected).sum();
+    assert!((total - 4.0).abs() < 1e-9, "{total}");
+    for i in &a.inferences {
+        assert_eq!(i.class, CardClass::Jacks);
+        assert!(f64::from(i.min) <= i.expected && i.expected <= f64::from(i.max));
+        assert!(!i.certain, "sampled, so never certain: {i:?}");
+    }
+
+    // Grand Hand by VH with all Jacks: in the last three tricks every
+    // distribution is enumerated, and the defenders provably hold no trump.
+    let mut g = game(false);
+    run(&mut g, &VH_AT_18);
+    run(
+        &mut g,
+        &[
+            Action::Hand,
+            Action::Announce(Announcement::plain(GameType::Grand)),
+        ],
+    );
+    for _ in 0..21 {
+        let first = current_view(&g).legal_actions[0];
+        g.apply(first).unwrap();
+    }
+    let view = current_view(&g);
+    let budget = Budget {
+        samples: 1000,
+        ..SMALL
+    };
+    let a = analyze(&view, budget, 8, None).unwrap();
+    assert!(a.effort.enumerated);
+    assert!(!a.inferences.is_empty());
+    for i in &a.inferences {
+        assert_eq!(i.class, CardClass::Trumps);
+        if i.min == i.max {
+            assert!(i.certain, "{i:?}");
+        }
+    }
+
+    // Null: no trumps to count.
+    let mut g = game(false);
+    run(&mut g, &VH_AT_18);
+    run(
+        &mut g,
+        &[
+            Action::Hand,
+            Action::Announce(Announcement::plain(GameType::Null)),
+        ],
+    );
+    let a = analyze(&current_view(&g), SMALL, 3, None).unwrap();
+    assert!(a.inferences.is_empty());
 }
 
 #[test]

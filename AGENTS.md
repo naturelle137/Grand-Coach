@@ -17,6 +17,7 @@ putting yourself in the opponents' shoes.
 - `docs/testing.md`: test levels and the verification gate (D-30)
 - `docs/analysis.md`: analysis semantics, budgets and latency (D-37, D-38)
 - `docs/ai.md`: strength levels, calibration protocol and results (D-40)
+- `docs/coach.md`: coach evidence, important/weak policies, lifecycle (D-48)
 - `docs/third-party.md`: origin and licence of third-party files
 - `docs/glossary.md`: German Skat terms → English
 - `CONTRIBUTING.md`: branching, commits, pull requests
@@ -37,7 +38,7 @@ Keep all documents short.
 Rust (Cargo workspace), GUI with egui. Later additionally Godot via
 godot-rust/gdext (D-11).
 
-## Architecture (crates; `skat-coach` follows in M5)
+## Architecture (crates)
 
 ```text
 crates/skat-core      rule engine: pure, deterministic (seed), no IO, no GUI

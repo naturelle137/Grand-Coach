@@ -2930,6 +2930,16 @@ dependencies = [
  "serde",
  "serde_json",
  "skat-ai",
+ "skat-coach",
+ "skat-core",
+]
+
+[[package]]
+name = "skat-coach"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "skat-analysis",
  "skat-core",
 ]
 

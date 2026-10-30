@@ -7,6 +7,7 @@ use skat_core::{
     Action, Call, Card, CompletedTrick, Contract, GameResult, KontraLevel, Phase, PlayerView, Seat,
 };
 
+use crate::coach::CoachView;
 use crate::series::{ScoreSheet, SeriesResult};
 use crate::session::{PlayerId, SessionConfig};
 use crate::sort::sort_hand;
@@ -14,7 +15,7 @@ use crate::sort::sort_hand;
 /// Everything a frontend shows. Built only from the human's
 /// [`PlayerView`], so it never contains hidden cards of the opponents or an
 /// unrevealed Skat (D-23).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TableView {
     /// Settings of the session.
     pub config: SessionConfig,
@@ -68,6 +69,8 @@ pub struct TableView {
     pub can_next_game: bool,
     /// [`crate::Command::EndSeries`] is possible.
     pub can_end_series: bool,
+    /// The live coach.
+    pub coach: CoachView,
 }
 
 /// One player at the table.
@@ -127,6 +130,7 @@ pub(crate) fn build_view(
     series_finished: bool,
     opponent_to_move: bool,
     view: &PlayerView,
+    coach: CoachView,
 ) -> TableView {
     let player = |seat: Seat| PlayerId::on_seat(seat, dealer);
     let game = view.contract.map(|c| c.game);
@@ -216,5 +220,6 @@ pub(crate) fn build_view(
         can_end_series: game_over
             && !series_finished
             && config.series == crate::session::SeriesLength::Free,
+        coach,
     }
 }

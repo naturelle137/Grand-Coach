@@ -31,6 +31,7 @@
 //! assert_eq!(session.view().sheet.records.len(), 3);
 //! ```
 
+mod coach;
 mod series;
 mod session;
 mod sort;
@@ -38,12 +39,18 @@ mod sort;
 mod tests;
 mod view;
 
+pub use coach::{
+    Advice, CoachEvent, CoachJob, CoachLevel, CoachResult, CoachSettings, CoachView, Pending,
+    Unavailable,
+};
 pub use series::{GameRecord, ScoreSheet, SeriesResult};
 pub use session::{
     AppError, AppEvent, Command, OpponentJob, OpponentMove, Opponents, PlayerId, SeriesLength,
     Session, SessionConfig,
 };
-pub use skat_ai::{Cancel, Level};
+pub use skat_ai::{Budget, Cancel, Level};
+/// Structured coach explanations (D-13); frontends translate them.
+pub use skat_coach as coach_model;
 pub use sort::sort_hand;
 pub use view::{PlayedCard, ResultView, SeatInfo, TableView, TrickView};
 

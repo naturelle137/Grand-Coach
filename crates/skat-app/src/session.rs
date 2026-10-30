@@ -5,9 +5,12 @@
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use skat_ai::{Cancel, Level, Mephisto, Opponent, Profile};
+use skat_ai::{Budget, Cancel, Level, Mephisto, Opponent, Profile};
 use skat_core::{Action, Event, Game, Phase, RuleConfig, RuleError, Seat};
 
+use crate::coach::{
+    CoachEvent, CoachJob, CoachResult, CoachSettings, CoachState, DecisionKey, Pending,
+};
 use crate::series::{GameRecord, ScoreSheet, SeriesResult};
 use crate::view::{TableView, build_view};
 
@@ -120,6 +123,15 @@ pub enum Command {
     NextGame,
     /// End a free-play series between games.
     EndSeries,
+    /// Change the coach settings; the game and the opponents are not
+    /// affected. Allowed at any time.
+    SetCoach(CoachSettings),
+    /// Ask the coach about the current decision of the human.
+    RequestAdvice,
+    /// Play the action the warning held back, exactly once.
+    ProceedAnyway,
+    /// Withdraw the held action and decide again; the game is unchanged.
+    Reconsider,
 }
 
 /// What happened. Contains only information the human may see.
@@ -150,6 +162,8 @@ pub enum AppEvent {
         /// Number of games played.
         games: u32,
     },
+    /// The coach held back or released a human action.
+    Coach(CoachEvent),
 }
 
 /// Why a command was rejected. The session is unchanged after an error.
@@ -169,6 +183,16 @@ pub enum AppError {
     SeriesFinished,
     /// Only a free-play series can be ended by the player.
     NotFreePlay,
+    /// The human has no decision to take right now.
+    NoDecision,
+    /// The coach is off.
+    CoachOff,
+    /// No action is held back by the coach.
+    NothingPending,
+    /// An action is held back by the coach: proceed or reconsider first.
+    ActionPending,
+    /// The coach result was computed for an earlier position or budget.
+    StaleCoachResult,
 }
 
 /// An opponent decision to compute, possibly on another thread so the
@@ -259,6 +283,8 @@ pub struct Session {
     pub(crate) dealer: PlayerId,
     sheet: ScoreSheet,
     finished: bool,
+    /// The live coach; it never influences deals or opponents.
+    coach: CoachState,
 }
 
 impl Session {
@@ -271,6 +297,10 @@ impl Session {
         ai_rng.set_stream(1);
         let goldfish = PlayerId(1 + (ai_rng.next_u64() % 2) as u8);
         let ai_seeds = [ai_rng.next_u64(), ai_rng.next_u64()];
+        // The coach's own stream: its seed reveals nothing about the deals
+        // and leaves the opponents' seeds untouched.
+        let mut coach_rng = ChaCha8Rng::seed_from_u64(config.seed);
+        coach_rng.set_stream(2);
         Session {
             config,
             rng,
@@ -284,6 +314,7 @@ impl Session {
             dealer: PlayerId(2),
             sheet: ScoreSheet::default(),
             finished: matches!(config.series, SeriesLength::Fixed(0)),
+            coach: CoachState::new(coach_rng.next_u64()),
         }
     }
 
@@ -308,7 +339,81 @@ impl Session {
             self.finished,
             self.opponent_to_move(),
             &self.game.view(human_seat),
+            self.coach.view(self.human_decision()),
         )
+    }
+
+    /// Coach settings.
+    pub fn coach_settings(&self) -> CoachSettings {
+        self.coach.settings
+    }
+
+    /// Sets the work budget of coach analyses (default
+    /// [`Budget::INTERACTIVE`]); for tests and benchmarks. Results computed
+    /// with another budget are not used.
+    pub fn set_coach_budget(&mut self, budget: Budget) {
+        self.coach.budget = budget;
+    }
+
+    /// The current decision of the human, if any.
+    fn human_decision(&self) -> Option<DecisionKey> {
+        let seat = self.game.current_seat()?;
+        (!self.finished && PlayerId::on_seat(seat, self.dealer).is_human()).then_some(DecisionKey {
+            number: self.number,
+            actions: self.actions,
+        })
+    }
+
+    /// The coach analysis due now, if the coach needs one for the human's
+    /// current decision and has none yet. Compute it with
+    /// [`CoachJob::run`] (on any thread) and pass the result to
+    /// [`Session::finish_coach`]. It holds only the human's view.
+    pub fn coach_job(&self) -> Option<CoachJob> {
+        let key = self.human_decision()?;
+        if !self.coach.wanted(key) || self.coach.result(key).is_some() {
+            return None;
+        }
+        let seat = PlayerId::HUMAN.seat(self.dealer);
+        Some(self.coach.job(key, self.game.view(seat)))
+    }
+
+    /// Stores a coach result for the decision it was computed for. If the
+    /// warning held an action back waiting for it, the action is now either
+    /// played (not weak, or no finished analysis to judge it) or held with
+    /// a warning. Fails without changes if the decision changed meanwhile.
+    pub fn finish_coach(&mut self, result: CoachResult) -> Result<Vec<AppEvent>, AppError> {
+        let key = self.human_decision().ok_or(AppError::StaleCoachResult)?;
+        if !self.coach.accept(key, result) {
+            return Err(AppError::StaleCoachResult);
+        }
+        match self.coach.pending.clone() {
+            Some(Pending::Checking { action }) => self.check(key, action),
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    /// The warning check of a human action at `key`: plays it, holds it
+    /// until the analysis is finished, or holds it with a warning.
+    fn check(&mut self, key: DecisionKey, action: Action) -> Result<Vec<AppEvent>, AppError> {
+        if !self.coach.settings.warnings {
+            return self.apply(action);
+        }
+        // Reject illegal actions before holding them back.
+        self.game.validate(action).map_err(AppError::Rule)?;
+        if self.coach.result(key).is_none() {
+            self.coach.pending = Some(Pending::Checking { action });
+            return Ok(vec![AppEvent::Coach(CoachEvent::Checking { action })]);
+        }
+        match self.coach.warning(key, action) {
+            Some(warning) => {
+                self.coach.pending = Some(Pending::Warning {
+                    action,
+                    warning: Box::new(warning),
+                });
+                Ok(vec![AppEvent::Coach(CoachEvent::Warned { action })])
+            }
+            None => self.apply(action),
+        }
     }
 
     /// `true` if an opponent has to act.
@@ -390,6 +495,15 @@ impl Session {
 
     /// Executes a command. On error nothing changes.
     pub fn execute(&mut self, command: Command) -> Result<Vec<AppEvent>, AppError> {
+        if let Command::SetCoach(settings) = command {
+            self.coach.settings = settings;
+            if !settings.warnings {
+                // Nothing to check any more: the held action is withdrawn,
+                // never played behind the human's back.
+                self.coach.pending = None;
+            }
+            return Ok(Vec::new());
+        }
         if self.finished {
             return Err(AppError::SeriesFinished);
         }
@@ -399,7 +513,45 @@ impl Session {
                 if seat.is_some_and(|s| !PlayerId::on_seat(s, self.dealer).is_human()) {
                     return Err(AppError::NotYourTurn);
                 }
+                if self.coach.pending.is_some() {
+                    return Err(AppError::ActionPending);
+                }
+                match self.human_decision() {
+                    Some(key) => self.check(key, action),
+                    None => self.apply(action),
+                }
+            }
+            Command::SetCoach(_) => unreachable!("handled above"),
+            Command::RequestAdvice => {
+                let key = self.human_decision().ok_or(AppError::NoDecision)?;
+                if self.coach.settings.level == crate::CoachLevel::Off {
+                    return Err(AppError::CoachOff);
+                }
+                // A cancelled or failed analysis is computed again.
+                if self.coach.result(key).is_some_and(|r| r.is_unavailable()) {
+                    self.coach.cache = None;
+                }
+                self.coach.requested = Some(key);
+                Ok(Vec::new())
+            }
+            Command::ProceedAnyway => {
+                let pending = self.coach.pending.take().ok_or(AppError::NothingPending)?;
+                let action = pending.action();
+                if let Some(key) = self.human_decision() {
+                    self.coach.acknowledged.push((key, action));
+                }
                 self.apply(action)
+                    .inspect_err(|_| self.coach.pending = Some(pending))
+            }
+            Command::Reconsider => {
+                let pending = self.coach.pending.take().ok_or(AppError::NothingPending)?;
+                let action = pending.action();
+                if let (Some(key), Pending::Warning { .. }) = (self.human_decision(), &pending) {
+                    // Choosing it again counts as confirmed (no second
+                    // warning for the same action and position).
+                    self.coach.acknowledged.push((key, action));
+                }
+                Ok(vec![AppEvent::Coach(CoachEvent::Withdrawn { action })])
             }
             Command::AdvanceOpponent => {
                 let job = self.opponent_job().ok_or(AppError::NoOpponentToMove)?;
@@ -433,6 +585,7 @@ impl Session {
     fn apply(&mut self, action: Action) -> Result<Vec<AppEvent>, AppError> {
         let core_events = self.game.apply(action).map_err(AppError::Rule)?;
         self.actions += 1;
+        self.coach.decision_changed();
         let mut events: Vec<AppEvent> = core_events
             .into_iter()
             .map(|event| AppEvent::Game {
@@ -484,6 +637,7 @@ impl Session {
         self.game_seed = self.rng.next_u64();
         self.ai_seeds = [self.ai_rng.next_u64(), self.ai_rng.next_u64()];
         self.actions = 0;
+        self.coach.decision_changed();
         self.game = Game::new(self.game_seed, rule_config(self.config));
         vec![AppEvent::GameStarted {
             number: self.number,

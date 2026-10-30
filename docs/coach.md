@@ -1,0 +1,76 @@
+# Live coach: `skat-coach`
+
+How the live coach of M5 explains a decision (D-48). Details are in the
+code (`crates/skat-coach`, `crates/skat-app/src/coach.rs`).
+
+## Evidence only from the analysis
+
+`skat_coach::explain(view, analysis)` turns one `Analysis` of the human's
+`PlayerView` into a structured `Explanation` (D-13); `advise` runs the
+analysis and the explanation in one call. The coach ranks, groups and
+labels; it computes no strategy, counts no cards and models no opponent.
+
+| Part | Source in the analysis | Kind |
+|------|------------------------|------|
+| Considerations `Known` | `observations` (voids, trumps out, Augen, own Skat, bids, Kontra eligibility) | exact fact |
+| Considerations `Inferred` | `inferences`: expected trumps (Jacks before the announcement) per hidden place, with min/max | estimate; `certain` only if the hard constraints prove it |
+| Options, values | `options[].estimate`, ranked by `skat_analysis::utility` (the opponents' utility) | estimate with standard error |
+| Reasons | differences between two estimates | estimate |
+| Assumptions, basis | `assumptions`, `effort` | model |
+
+Win chances are those of the deciding seat's party; the coach labels the
+party (own side, declarer, defenders). Points are Seeger-Fabian list
+points and, for defenders, the declarer's game points; Augen are never
+estimated. Null and Schwarz objectives come from the contract.
+
+`skat-analysis` gained `inferences` for M5: the opponent model's
+distribution of trumps over the hidden places, from the same weighted
+distributions as the estimates.
+
+## Policies (D-48)
+
+- **Equivalent**: within 1 point (`TIE_POINTS`) or within the noise margin,
+  2 combined standard errors of the expected score (`MARGIN_SE`).
+- **Weak**: at least 10 Seeger-Fabian points (`WEAK_POINTS`) below the best
+  option *and* beyond the noise margin. Card play and Kontra/Re estimates
+  have standard errors of about 3–4 points, so weak means a clear loss
+  there; before card play (17–20 points, `analysis.md`) only gross
+  mistakes qualify, which matches what 24 samples can tell apart.
+- Drücken options dropped after screening are `Screened`, never weak.
+- **Important decision**: the analysis is complete, at least two options
+  are compared, and a *natural* option is weak. Natural: every option
+  except jump bids above the next bid value and Schneider/Schwarz
+  announcements.
+- **Warning**: only with a complete analysis and a weak chosen action.
+
+## Session lifecycle (`skat-app`)
+
+- Levels (D-08): **off** (no explanations, no help action), **on request**
+  (default; `RequestAdvice`), **important** (shown when important, help
+  action too), **every move**. Warning off by default (D-09), independent
+  of the level; "show figures" hides estimates but keeps the reasoning and
+  exact facts.
+- `Session::coach_job` hands out the analysis of the human's view when one
+  is due; the frontend runs it off the UI thread. `finish_coach` accepts it
+  only for the same decision (game number, actions applied) and budget;
+  any action invalidates it. Cancelled or failed analyses show as
+  unavailable, asking again recomputes; an analysis out of budget shows as
+  provisional without recommendation, importance or warning.
+- Warning flow: with warnings on, `Act` holds the action until the
+  analysis is there (`Checking`; "play without check" proceeds), then plays
+  it or holds it with a `Warning`. `ProceedAnyway` plays it exactly once;
+  `Reconsider` withdraws it, and choosing it again at the same position is
+  not warned twice. Turning warnings off withdraws a held action. Nothing
+  held is ever played behind the player's back.
+- The coach seed comes from stream 2 of the series seed, mixed with the
+  game number and the view; opponents and deals are untouched. Same view,
+  seed and budget give the same explanation.
+
+## Latency
+
+The coach runs one `analyze` with `Budget::INTERACTIVE` per human
+decision; `explain` is a single pass over the options. Its latency is the
+analysis latency in [analysis.md](analysis.md#latency-target-and-benchmark).
+The frontend stays responsive because the analysis runs on a background
+thread and is cancelled when the decision changes. An interactive
+measurement in the playable application is still open (issue #10).

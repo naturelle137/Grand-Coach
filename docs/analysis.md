@@ -20,7 +20,15 @@ in the code (`crates/skat-analysis`).
   budget, seed, cancel)` is `analyze` for a seat that does not remember
   where some played cards went (Goldfish, [ai.md](ai.md#goldfish)).
 - Results are plain data (serde behind the feature `serde`): estimates,
-  structured observations and assumptions, no texts (D-13).
+  structured observations, inferences and assumptions, no texts (D-13).
+- `inferences`: per hidden place (other seat, unknown Skat) the weighted
+  mean, minimum and maximum number of trumps (Jacks before the
+  announcement; none in Null) over the finished distributions; `certain`
+  only when the hard constraints prove the count. The coach shows them as
+  estimates ([coach.md](coach.md)).
+- `utility(view, estimate)` is the value opponents choose by and the coach
+  ranks by: own expected Seeger-Fabian points, for a defender minus half
+  the declarer's expected game points.
 
 ## Knowledge (card counter)
 

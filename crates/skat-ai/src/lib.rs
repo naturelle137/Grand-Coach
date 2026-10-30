@@ -20,6 +20,6 @@ mod rookie;
 
 pub use baseline::BaselineOpponent;
 pub use mephisto::Mephisto;
-pub use opponent::{Decision, Level, Opponent, Profile, utility};
+pub use opponent::{Decision, Level, Opponent, Profile};
 pub use rookie::Mistakes;
-pub use skat_analysis::{Budget, Cancel, Status};
+pub use skat_analysis::{Budget, Cancel, Status, utility};

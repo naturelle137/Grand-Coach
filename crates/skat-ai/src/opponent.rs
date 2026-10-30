@@ -16,7 +16,7 @@
 
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
-use skat_analysis::{Analysis, Budget, Cancel, Estimate, Status, analyze_forgetful};
+use skat_analysis::{Analysis, Budget, Cancel, Status, analyze_forgetful, utility};
 use skat_core::{Action, CardSet, KontraLevel, Phase, PlayerView};
 
 use crate::BaselineOpponent;
@@ -244,19 +244,6 @@ pub(crate) fn decision(selected: Option<Action>, rules: Action, status: Status) 
 /// Uniform number in [0, 1).
 fn unit(rng: &mut ChaCha8Rng) -> f64 {
     (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-}
-
-/// What an option is worth to the deciding seat: its own expected
-/// Seeger-Fabian points; a defender also gains half of every point the
-/// declarer loses, since both defenders gain relative to the declarer
-/// (this makes Kontra worth saying).
-pub fn utility(view: &PlayerView, estimate: &Estimate) -> f64 {
-    let defender = view.declarer.is_some_and(|d| d != view.seat);
-    if defender {
-        estimate.expected_score - estimate.expected_game_points / 2.0
-    } else {
-        estimate.expected_score
-    }
 }
 
 /// Bonus in points for the rules-of-thumb action. Double-dummy values only

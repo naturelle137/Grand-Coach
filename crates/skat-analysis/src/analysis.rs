@@ -54,6 +54,9 @@ pub struct Analysis {
     pub observations: Vec<Observation>,
     /// Model assumptions behind the estimates.
     pub assumptions: Vec<Assumption>,
+    /// What the weighted distributions say about hidden cards (opponent
+    /// model): inferred, not known, unless marked certain.
+    pub inferences: Vec<Inference>,
     /// Work done and uncertainty.
     pub effort: Effort,
 }
@@ -174,6 +177,38 @@ pub enum Assumption {
     BidAsLimit,
 }
 
+/// A class of cards whose whereabouts the opponent model estimates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CardClass {
+    /// The trumps of the announced suit game or Grand.
+    Trumps,
+    /// The four Jacks (Buben), before a game is announced.
+    Jacks,
+}
+
+/// How many cards of a class a hidden place holds, over the weighted
+/// distributions the estimates were computed on (finished ones only).
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Inference {
+    /// A seat other than the deciding one, or the Skat.
+    pub holder: Place,
+    /// The class of cards.
+    pub class: CardClass,
+    /// Weighted mean number of such cards there.
+    pub expected: f64,
+    /// Fewest such cards there in any of these distributions.
+    pub min: u8,
+    /// Most such cards there in any of these distributions.
+    pub max: u8,
+    /// `true` only if the hard constraints prove the count: the place may
+    /// hold none of these cards (a proven void), or every consistent
+    /// distribution was enumerated and all agree (`min == max`). Otherwise
+    /// the numbers are an estimate.
+    pub certain: bool,
+}
+
 /// Work done and uncertainty.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -271,6 +306,7 @@ fn analyze_with(
             options: Vec::new(),
             observations,
             assumptions,
+            inferences: Vec::new(),
             effort: Effort {
                 planned: 0,
                 finished: 0,
@@ -371,6 +407,7 @@ fn analyze_with(
         .collect();
     let total: f64 = weights.iter().sum();
     let squares: f64 = weights.iter().map(|w| w * w).sum();
+    let inferences = inferences(view, &hidden, &worlds, &weights, enumerated);
     Ok(Analysis {
         seat: view.seat,
         phase: view.phase,
@@ -378,6 +415,7 @@ fn analyze_with(
         options,
         observations,
         assumptions,
+        inferences,
         effort: Effort {
             planned: worlds.len() as u32,
             finished: table.complete.iter().filter(|&&c| c).count() as u32,
@@ -1001,6 +1039,70 @@ fn observations(view: &PlayerView) -> Vec<Observation> {
         }
     }
     out
+}
+
+/// Trumps (or Jacks before the announcement) per hidden place, over the
+/// distributions with positive weight. None in Null and when no
+/// distribution finished.
+fn inferences(
+    view: &PlayerView,
+    hidden: &HiddenCards,
+    worlds: &[World],
+    weights: &[f64],
+    enumerated: bool,
+) -> Vec<Inference> {
+    let (class, cards) = match view.contract.map(|c| c.game) {
+        Some(GameType::Null) => return Vec::new(),
+        Some(game) => (CardClass::Trumps, game.trumps()),
+        None => (CardClass::Jacks, GameType::Grand.trumps()),
+    };
+    let total: f64 = weights.iter().sum();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    hidden
+        .slots()
+        .iter()
+        .map(|slot| {
+            let held = |world: &World| match slot.place {
+                Place::Seat(seat) => (world.hands[seat.index()] & cards).len() as u8,
+                Place::Skat => (world.skat & cards).len() as u8,
+            };
+            let mut sum = 0.0;
+            let (mut min, mut max) = (u8::MAX, 0);
+            for (world, &w) in worlds.iter().zip(weights) {
+                if w > 0.0 {
+                    let n = held(world);
+                    sum += w * f64::from(n);
+                    min = min.min(n);
+                    max = max.max(n);
+                }
+            }
+            Inference {
+                holder: slot.place,
+                class,
+                expected: sum / total,
+                min,
+                max,
+                certain: (slot.allowed & cards).is_empty()
+                    || (enumerated && min == max && weights.iter().all(|&w| w > 0.0)),
+            }
+        })
+        .collect()
+}
+
+/// What an option is worth to the deciding seat of `view`: its own
+/// expected Seeger-Fabian points; a defender also gains half of every
+/// point the declarer loses, since both defenders gain relative to the
+/// declarer (this makes Kontra worth saying). The opponents (`skat-ai`)
+/// choose by it and the coach compares options by it.
+pub fn utility(view: &PlayerView, estimate: &Estimate) -> f64 {
+    let defender = view.declarer.is_some_and(|d| d != view.seat);
+    if defender {
+        estimate.expected_score - estimate.expected_game_points / 2.0
+    } else {
+        estimate.expected_score
+    }
 }
 
 fn assumptions(phase: Phase) -> Vec<Assumption> {

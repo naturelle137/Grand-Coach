@@ -17,7 +17,11 @@ use eframe::egui::{Key, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use gui_egui::GrandCoachApp;
-use skat_app::{Action, Card, Level, Opponents, SeriesLength, SessionConfig, TableView};
+use skat_app::coach_model::Judgement;
+use skat_app::{
+    Action, Advice, Budget, Card, CoachLevel, CoachSettings, Level, Opponents, Pending,
+    SeriesLength, SessionConfig, TableView,
+};
 
 const SIZE: [f32; 2] = [1280.0, 820.0];
 
@@ -32,6 +36,9 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("settings", settings),
     ("new-series", new_series),
     ("new-series-seed", new_series_seed),
+    ("coach", coach),
+    ("coach-no-figures", coach_no_figures),
+    ("coach-warning", coach_warning),
 ];
 
 /// The window at launch: the "new series" dialog shows the series settings
@@ -103,6 +110,92 @@ fn new_series_seed(harness: &mut Harness<'_, GrandCoachApp>) {
     harness.run_steps(4);
 }
 
+/// The coach panel after "Was soll ich bedenken?" in the second trick:
+/// facts, estimates, compared options with figures.
+fn coach(harness: &mut Harness<'_, GrandCoachApp>) {
+    play_until(harness, |view, _| {
+        view.tricks_played >= 1 && view.legal_actions.len() >= 2
+    });
+    click(harness, Role::Button, "Was soll ich bedenken?");
+    await_coach(harness, |view| {
+        matches!(view.coach.advice, Advice::Ready(_) | Advice::Provisional(_))
+    });
+}
+
+/// The same explanation with the figures hidden.
+fn coach_no_figures(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach(harness);
+    let settings = view(harness).coach.settings;
+    harness.state_mut().set_coach(CoachSettings {
+        show_figures: false,
+        ..settings
+    });
+    harness.run_steps(4);
+}
+
+/// The warning before a clearly weaker card (coach at every move).
+fn coach_warning(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        warnings: true,
+        show_figures: true,
+    });
+    for _ in 0..400 {
+        settle(harness);
+        await_coach(harness, |view| {
+            !view.coach.analysing && !matches!(view.coach.advice, Advice::Computing)
+        });
+        let v = view(harness);
+        if v.series_finished {
+            break;
+        }
+        let weak = match &v.coach.advice {
+            Advice::Ready(e) => e
+                .options
+                .iter()
+                .find(|o| o.judgement == Judgement::Weak)
+                .map(|o| o.action),
+            _ => None,
+        };
+        if let Some(Action::Play(card)) = weak {
+            click(harness, Role::Button, &card_label(card));
+            await_coach(harness, |view| {
+                matches!(view.coach.pending, Some(Pending::Warning { .. }))
+            });
+            return;
+        }
+        let label = if v.acting.is_none() {
+            "Nächstes Spiel".to_owned()
+        } else if v.legal_actions.contains(&Action::Pass) {
+            "Passe".to_owned()
+        } else if v.legal_actions.contains(&Action::KeinKontra) {
+            "Kein Kontra".to_owned()
+        } else if let Some(&Action::Play(card)) = v.legal_actions.first() {
+            card_label(card)
+        } else {
+            panic!("no scripted click for {:?}", v.legal_actions);
+        };
+        click(harness, Role::Button, &label);
+        if view(harness).coach.pending.is_some() {
+            click(harness, Role::Button, "Trotzdem spielen");
+        }
+    }
+    panic!("no weak card found");
+}
+
+/// Runs frames until the coach state satisfies `done`.
+fn await_coach(harness: &mut Harness<'_, GrandCoachApp>, done: impl Fn(&TableView) -> bool) {
+    for _ in 0..20_000 {
+        harness.run_steps(1);
+        if done(&view(harness)) {
+            harness.run_steps(4);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    panic!("the coach did not finish");
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next() else {
@@ -158,6 +251,11 @@ fn harness(launch: bool) -> Harness<'static, GrandCoachApp> {
     // Simulated time (0.25 s per frame): opponents wait 2 s after the human's
     // card, so a completed trick stays visible in the middle.
     harness.state_mut().opponent_delay = 2.0;
+    // A smaller coach budget than interactive keeps the debug build quick.
+    harness.state_mut().set_coach_budget(Budget {
+        samples: 8,
+        nodes_per_task: 20_000_000,
+    });
     harness.run_steps(2);
     harness
 }

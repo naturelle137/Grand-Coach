@@ -9,9 +9,11 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use gui_egui::{Deck, GrandCoachApp, Language};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
+use skat_app::coach_model::Judgement;
 use skat_app::{
-    Action, Announcement, Card, Command, GameType, Level, Opponents, Phase, PlayedCard, PlayerId,
-    SeriesLength, Session, SessionConfig, Suit, TableView,
+    Action, Advice, Announcement, Budget, Card, CoachLevel, CoachSettings, Command, GameType,
+    Level, Opponents, Pending, Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig,
+    Suit, TableView,
 };
 
 const TABLE_GREEN: egui::Color32 = egui::Color32::from_rgb(34, 102, 58);
@@ -873,4 +875,212 @@ fn launch_shows_the_new_series_settings() {
         settle(&mut harness);
         assert!(!view(&harness).opponent_to_move);
     }
+}
+
+/// Game part of the view (everything but the coach).
+fn game_part(view: &TableView) -> TableView {
+    let mut view = view.clone();
+    view.coach = Session::new(SessionConfig::default()).view().coach;
+    view
+}
+
+/// Runs frames until the background coach analysis is done.
+fn await_coach(harness: &mut Harness<'_, GrandCoachApp>) {
+    for _ in 0..20_000 {
+        harness.run_steps(1);
+        let coach = view(harness).coach;
+        let done = !coach.analysing
+            && !matches!(coach.advice, Advice::Computing)
+            && !matches!(coach.pending, Some(Pending::Checking { .. }));
+        if done {
+            harness.run_steps(3);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("the coach did not finish");
+}
+
+const COACH_BUDGET: Budget = Budget {
+    samples: 6,
+    nodes_per_task: 20_000_000,
+};
+
+#[test]
+fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
+    let config = SessionConfig {
+        seed: 12,
+        series: SeriesLength::Fixed(36),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    harness.state_mut().set_coach_budget(COACH_BUDGET);
+    // Play cards until the human decides in the third trick: card play
+    // analyses are fast.
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
+    loop {
+        settle(&mut harness);
+        let v = view(&harness);
+        if v.phase == Phase::Spiel && v.tricks_played >= 2 && v.acting == Some(PlayerId::HUMAN) {
+            break;
+        }
+        human_turn(&mut harness, &mut rng);
+    }
+    let before = game_part(&view(&harness));
+    // On request (default): the help button, no explanation yet.
+    harness.get_by_label("Frag den Coach, wenn du Hilfe möchtest.");
+    button(&mut harness, "Was soll ich bedenken?");
+    await_coach(&mut harness);
+    assert!(matches!(
+        view(&harness).coach.advice,
+        Advice::Ready(_) | Advice::Provisional(_)
+    ));
+    harness.get_by_label("Optionen im Vergleich");
+    harness.get_by_label("Worauf die Schätzung beruht");
+    assert!(harness.query_all_by_label_contains("Gewinnchance").count() > 0);
+
+    // Hiding the figures keeps the reasoning.
+    let settings = view(&harness).coach.settings;
+    harness.state_mut().set_coach(CoachSettings {
+        show_figures: false,
+        ..settings
+    });
+    harness.run_steps(3);
+    harness.get_by_label("Optionen im Vergleich");
+    assert!(harness.query_all_by_label_contains("Gewinnchance").count() == 0);
+    assert!(harness.query_all_by_label_contains("%").count() == 0);
+
+    // English, figures back on.
+    harness.state_mut().set_language(Language::En);
+    let settings = view(&harness).coach.settings;
+    harness.state_mut().set_coach(CoachSettings {
+        show_figures: true,
+        ..settings
+    });
+    harness.run_steps(3);
+    harness.get_by_label("Options compared");
+    assert!(
+        harness
+            .query_all_by_label_contains("Winning chance")
+            .count()
+            > 0
+    );
+    harness.state_mut().set_language(Language::De);
+    harness.run_steps(2);
+    assert_eq!(game_part(&view(&harness)), before);
+
+    // Off: no panel, ordinary play.
+    let settings = view(&harness).coach.settings;
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::Off,
+        ..settings
+    });
+    harness.run_steps(3);
+    assert!(harness.query_by_label("Was soll ich bedenken?").is_none());
+    assert_eq!(game_part(&view(&harness)), before);
+    human_turn(&mut harness, &mut rng);
+    assert_ne!(game_part(&view(&harness)), before);
+}
+
+#[test]
+fn coach_levels_are_set_in_the_settings_menu() {
+    let config = SessionConfig {
+        seed: 12,
+        series: SeriesLength::Fixed(36),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    let levels = [
+        ("Aus", CoachLevel::Off),
+        ("Bei jedem Zug", CoachLevel::EveryMove),
+        ("Bei wichtigen Entscheidungen", CoachLevel::Important),
+        ("Auf Nachfrage", CoachLevel::OnRequest),
+    ];
+    for (label, level) in levels {
+        button(&mut harness, "Einstellungen");
+        click(&mut harness, Role::RadioButton, label);
+        assert_eq!(view(&harness).coach.settings.level, level);
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+    }
+    button(&mut harness, "Einstellungen");
+    click(&mut harness, Role::CheckBox, "Vor schwachen Zügen warnen");
+    assert!(view(&harness).coach.settings.warnings);
+    if harness.query_by_label("Zahlen anzeigen").is_none() {
+        button(&mut harness, "Einstellungen");
+    }
+    click(&mut harness, Role::CheckBox, "Zahlen anzeigen");
+    assert!(!view(&harness).coach.settings.show_figures);
+}
+
+#[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
+fn warning_before_a_weak_card_by_clicks() {
+    for seed in 0..40 {
+        let config = SessionConfig {
+            seed,
+            series: SeriesLength::Fixed(2),
+            kontra_re: false,
+            opponents: Opponents::Levels([Level::Easy; 2]),
+        };
+        let mut harness = harness(config);
+        harness.state_mut().set_coach_budget(COACH_BUDGET);
+        harness.state_mut().set_coach(CoachSettings {
+            level: CoachLevel::EveryMove,
+            warnings: true,
+            show_figures: true,
+        });
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        for _ in 0..200 {
+            settle(&mut harness);
+            await_coach(&mut harness);
+            let v = view(&harness);
+            if v.series_finished {
+                break;
+            }
+            match v.coach.pending {
+                Some(Pending::Checking { .. }) => {
+                    button(&mut harness, "Ohne Prüfung spielen");
+                    continue;
+                }
+                Some(Pending::Warning { .. }) => {
+                    button(&mut harness, "Trotzdem spielen");
+                    continue;
+                }
+                None => {}
+            }
+            // The coach's finished analysis of this decision.
+            let weak = match &v.coach.advice {
+                Advice::Ready(e) if v.phase == Phase::Spiel => Some(e),
+                _ => None,
+            }
+            .and_then(|e| {
+                e.options
+                    .iter()
+                    .find(|o| o.judgement == Judgement::Weak)
+                    .map(|o| o.action)
+            });
+            let Some(Action::Play(card)) = weak else {
+                human_turn(&mut harness, &mut rng);
+                continue;
+            };
+            let before = game_part(&v);
+            button(&mut harness, &card_label(card));
+            await_coach(&mut harness);
+            harness.get_by_label("Bist du sicher?");
+            assert_eq!(game_part(&view(&harness)), before, "not played yet");
+            button(&mut harness, "Zurück zur Entscheidung");
+            assert!(harness.query_by_label("Bist du sicher?").is_none());
+            assert_eq!(game_part(&view(&harness)), before);
+            // The same card again: no second warning, played once.
+            button(&mut harness, &card_label(card));
+            let after = view(&harness);
+            assert_eq!(after.hand.len() + 1, before.hand.len());
+            assert!(!after.hand.contains(&card));
+            return;
+        }
+    }
+    panic!("no weak card found");
 }

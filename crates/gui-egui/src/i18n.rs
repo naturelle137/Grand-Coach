@@ -114,6 +114,7 @@ mod tests {
             include_str!("app.rs"),
             include_str!("text.rs"),
             include_str!("cards.rs"),
+            include_str!("coach.rs"),
         ] {
             for literal in source.split('"').skip(1).step_by(2) {
                 let looks_like_id = literal.contains('-')
@@ -167,9 +168,45 @@ mod tests {
                 let pattern = bundle.get_message(&id).and_then(|m| m.value()).unwrap();
                 let mut args = FluentArgs::new();
                 for name in [
-                    "number", "total", "player", "value", "seed", "cards", "tricks", "suit",
-                    "rank", "augen", "game", "count", "bid", "score", "points", "games", "won",
-                    "lost", "phase", "current", "card", "left", "right", "mode",
+                    "number",
+                    "total",
+                    "player",
+                    "value",
+                    "seed",
+                    "cards",
+                    "tricks",
+                    "suit",
+                    "rank",
+                    "augen",
+                    "game",
+                    "count",
+                    "bid",
+                    "score",
+                    "points",
+                    "games",
+                    "won",
+                    "lost",
+                    "phase",
+                    "current",
+                    "card",
+                    "left",
+                    "right",
+                    "mode",
+                    "target",
+                    "declarer",
+                    "defenders",
+                    "holder",
+                    "class",
+                    "expected",
+                    "min",
+                    "max",
+                    "other",
+                    "chance",
+                    "party",
+                    "se",
+                    "finished",
+                    "best",
+                    "action",
                 ] {
                     args.set(name, "x");
                 }
