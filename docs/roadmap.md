@@ -55,7 +55,8 @@ No individual tasks here.
 
 - [ ] **M8 – Training and release 1.0**
   Done when error statistics over time and the training mode work and there
-  are installable packages for Linux and Windows 11.
+  are installable packages for Linux and Windows 11 that ship
+  `THIRD-PARTY-NOTICES` (D-43).
 
 - [ ] **M9 – Godot frontend** (long term)
   Done when a Godot frontend (gdext) offers the same functionality via

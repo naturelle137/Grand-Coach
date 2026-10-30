@@ -76,7 +76,9 @@ Siehe [CONTRIBUTING.md](CONTRIBUTING.md) und den
 - **Grafiken, Dokumentation und sonstige Inhalte** (`assets/`, `docs/`,
   Texte): [CC BY-SA 4.0](LICENSE-ASSETS).
 - **Fremde Dateien und Bibliotheken** nur mit kompatibler Lizenz; Herkunft und
-  Lizenz stehen in [docs/third-party.md](docs/third-party.md).
+  Lizenz stehen in [docs/third-party.md](docs/third-party.md), Lizenztexte und
+  Copyright-Hinweise der Bibliotheken in
+  [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).
 
 ## English
 
@@ -152,4 +154,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and the
 - **Graphics, documentation and other content** (`assets/`, `docs/`, texts):
   [CC BY-SA 4.0](LICENSE-ASSETS).
 - **Third-party files and libraries** only with a compatible licence; origin
-  and licence are listed in [docs/third-party.md](docs/third-party.md).
+  and licence are listed in [docs/third-party.md](docs/third-party.md), the
+  libraries' licence texts and copyright notices in
+  [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).

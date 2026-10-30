@@ -47,6 +47,7 @@ crates/skat-coach     structured explanations (text keys + parameters), no texts
 crates/skat-app       application interface: session, commands, events, view models
 crates/gui-egui       egui frontend
 tools/cardgen         generates card SVGs into assets/cards/
+tools/notices         generates THIRD-PARTY-NOTICES from Cargo.lock (D-43)
 ```
 
 Dependencies only point downwards: core ← analysis ← ai/coach ← app ← gui.
@@ -105,6 +106,7 @@ The desktop app is the binary `grand-coach` of `crates/gui-egui`
 cargo run --locked --release -p gui-egui      # start the game
 GRAND_COACH_SEED=42 cargo run -p gui-egui     # replay a series seed
 cargo run --locked -p cardgen                 # regenerate assets/cards/
+cargo run --locked -p notices                 # regenerate THIRD-PARTY-NOTICES
 cargo run --locked --release -p skat-analysis --example bench  # analysis latency
 cargo run --locked --release -p skat-ai --example latency       # AI latency per level
 cargo run --locked --release -p skat-ai --example calibrate -- validation medium strong 200 10 0
@@ -113,7 +115,8 @@ cargo run --locked --release -p skat-ai --example calibrate -- validation medium
 On Linux the window needs EGL/GL and Wayland or X11 client libraries
 (Fedora: `mesa-libEGL mesa-libGL libwayland-egl libxkbcommon`). After
 changing `tools/cardgen`, regenerate and commit `assets/cards/`; a test
-fails otherwise.
+fails otherwise. After every `Cargo.lock` change, run `cargo fetch --locked`
+and `notices`, and commit `THIRD-PARTY-NOTICES`; a test fails otherwise.
 
 ## Testing
 
@@ -146,6 +149,12 @@ fails otherwise.
 - Generated or drawn content under `assets/` and `docs/` is CC BY-SA 4.0
   (`LICENSE-ASSETS`). SVG files get an `SPDX-License-Identifier: CC-BY-SA-4.0`
   comment where practical.
-- Third-party graphics or libraries only with a compatible licence. Record
-  every third-party file in `docs/third-party.md` before committing it. No NC
-  or ND licences, no files of unclear origin.
+- Third-party graphics, fonts or libraries only under an allowed licence
+  (D-42; full list in `CONTRIBUTING.md`, "Allowed third-party licences"):
+  code MIT, MIT-0, Apache-2.0, BSD-2/3-Clause, ISC, Zlib, BSL-1.0,
+  Unicode-3.0, Unicode-DFS-2016, Unlicense, 0BSD, CC0-1.0, MPL-2.0; fonts
+  also OFL-1.1, Bitstream-Vera, Ubuntu-font-1.0; content also public domain, CC-BY-3.0,
+  CC-BY-4.0, CC-BY-SA-4.0. `A OR B` needs one allowed option, `A AND B`
+  all. Record every third-party file in `docs/third-party.md` before
+  committing it. Never add GPL/AGPL/LGPL-only, SSPL, BUSL, NC or ND
+  licences or files of unclear origin; anything else: ask the maintainer.

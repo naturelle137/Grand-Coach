@@ -8,6 +8,7 @@ members = [
     "crates/skat-app",
     "crates/gui-egui",
     "tools/cardgen",
+    "tools/notices",
 ]
 
 [workspace.package]
