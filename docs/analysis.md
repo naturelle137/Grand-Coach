@@ -10,9 +10,15 @@ in the code (`crates/skat-analysis`).
   nothing else (D-23). It cannot reach the real hidden cards.
 - Sampled deals (`World`) and fully specified card-play positions
   (`double_dummy::Position`) are hypothetical simulation inputs.
-- The only bridge from a real game to a full position is
-  `Position::from_omniscient(&OmniscientView)`, for open mode and post-game
-  analysis (M7). Its name and argument type make every use visible.
+- The only bridges from a real game to full knowledge are
+  `Position::from_omniscient(&OmniscientView)` and
+  `World::from_omniscient(&OmniscientView)`, for open mode, post-game
+  analysis (M7) and the Mephisto opponent (D-41). Their names and argument
+  type make every use visible.
+- `analyze_known(view, world, budget, cancel)` evaluates every option in
+  one given distribution, exactly. `analyze_forgetful(view, forgotten,
+  budget, seed, cancel)` is `analyze` for a seat that does not remember
+  where some played cards went (Goldfish, [ai.md](ai.md#goldfish)).
 - Results are plain data (serde behind the feature `serde`): estimates,
   structured observations and assumptions, no texts (D-13).
 

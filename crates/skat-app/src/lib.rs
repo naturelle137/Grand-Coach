@@ -4,16 +4,20 @@
 //! and view models as plain, serialisable data. Frontends use only this
 //! crate; it re-exports the core data types they need to display.
 //!
-//! One human (player 0) plays a series against two baseline opponents
-//! (players 1 and 2). Series semantics: D-31 in `docs/decisions.md`.
+//! One human (player 0) plays a series against two opponents (players 1
+//! and 2): each with its own strength [`Level`] (D-40), or one of the table
+//! modes Goldfish and Mephisto ([`Opponents`], D-41). Series semantics:
+//! D-31 in `docs/decisions.md`. Opponent decisions can be computed off the
+//! UI thread with [`Session::opponent_job`].
 //!
 //! ```
-//! use skat_app::{Command, Session, SessionConfig, SeriesLength};
+//! use skat_app::{Command, Level, Opponents, Session, SessionConfig, SeriesLength};
 //!
 //! let mut session = Session::new(SessionConfig {
 //!     seed: 7,
 //!     series: SeriesLength::Fixed(3),
 //!     kontra_re: false,
+//!     opponents: Opponents::Levels([Level::Easy, Level::Easy]),
 //! });
 //! while !session.view().series_finished {
 //!     session.run_opponents();
@@ -35,7 +39,11 @@ mod tests;
 mod view;
 
 pub use series::{GameRecord, ScoreSheet, SeriesResult};
-pub use session::{AppError, AppEvent, Command, PlayerId, SeriesLength, Session, SessionConfig};
+pub use session::{
+    AppError, AppEvent, Command, OpponentJob, OpponentMove, Opponents, PlayerId, SeriesLength,
+    Session, SessionConfig,
+};
+pub use skat_ai::{Cancel, Level};
 pub use sort::sort_hand;
 pub use view::{PlayedCard, ResultView, SeatInfo, TableView, TrickView};
 

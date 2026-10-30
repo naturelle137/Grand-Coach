@@ -5,7 +5,7 @@
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use skat_ai::{BaselineOpponent, Opponent};
+use skat_ai::{Cancel, Level, Mephisto, Opponent, Profile};
 use skat_core::{Action, Event, Game, Phase, RuleConfig, RuleError, Seat};
 
 use crate::series::{GameRecord, ScoreSheet, SeriesResult};
@@ -67,6 +67,23 @@ pub struct SessionConfig {
     pub series: SeriesLength,
     /// Kontra/Re (D-03).
     pub kontra_re: bool,
+    /// The opponents.
+    pub opponents: Opponents,
+}
+
+/// Who the opponents are (D-40, D-41).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Opponents {
+    /// Each opponent with its own level: index 0 is player 1 (left),
+    /// index 1 player 2 (right).
+    Levels([Level; 2]),
+    /// One opponent, drawn per series, plays Strong but forgets played
+    /// cards ([`Profile::GOLDFISH`]); the other plays Medium.
+    Goldfish,
+    /// Both opponents see every card before card play. In card play a
+    /// computer declarer keeps seeing every card while its partner plays
+    /// Strong; against the human declarer both defenders see every card.
+    Mephisto,
 }
 
 impl Default for SessionConfig {
@@ -75,6 +92,18 @@ impl Default for SessionConfig {
             seed: 0,
             series: SeriesLength::Fixed(36),
             kontra_re: false,
+            opponents: Opponents::Levels([Level::Medium; 2]),
+        }
+    }
+}
+
+impl SessionConfig {
+    /// Level of `player` when every opponent has one; `None` for the
+    /// human and in the Goldfish and Mephisto modes.
+    pub fn level(&self, player: PlayerId) -> Option<Level> {
+        match (self.opponents, player.0) {
+            (Opponents::Levels(levels), 1 | 2) => Some(levels[player.index() - 1]),
+            _ => None,
         }
     }
 }
@@ -132,12 +161,80 @@ pub enum AppError {
     NotYourTurn,
     /// It is not an opponent's turn.
     NoOpponentToMove,
+    /// The opponent move was computed for an earlier position.
+    StaleOpponentMove,
     /// The current game is not over yet.
     GameInProgress,
     /// The series is over; start a new session.
     SeriesFinished,
     /// Only a free-play series can be ended by the player.
     NotFreePlay,
+}
+
+/// An opponent decision to compute, possibly on another thread so the
+/// frontend stays responsive. It holds the opponent's own view, which the
+/// frontend cannot read.
+#[derive(Clone, Debug)]
+pub struct OpponentJob {
+    level: Option<Level>,
+    brain: Brain,
+    position: Position,
+}
+
+/// How an opponent decides, with exactly the information it may use.
+#[derive(Clone, Debug)]
+enum Brain {
+    /// From its own seat's view (D-23).
+    Fair(Opponent, Box<skat_core::PlayerView>),
+    /// With every card known (Mephisto, D-41).
+    Mephisto(Box<Game>),
+}
+
+/// Identifies the position an opponent move was computed for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Position {
+    number: u32,
+    actions: usize,
+    player: u8,
+}
+
+impl OpponentJob {
+    /// Player who decides.
+    pub fn player(&self) -> PlayerId {
+        PlayerId(self.position.player)
+    }
+
+    /// Level of that player; `None` in the Goldfish and Mephisto modes.
+    pub fn level(&self) -> Option<Level> {
+        self.level
+    }
+
+    /// `true` if this decision is taken with every card known.
+    pub fn sees_all_cards(&self) -> bool {
+        matches!(self.brain, Brain::Mephisto(_))
+    }
+
+    /// Computes the decision. `cancel` stops the analysis early; the move
+    /// is then chosen from what was finished, or by the rules of thumb,
+    /// and is always legal.
+    pub fn run(&self, cancel: Option<&Cancel>) -> OpponentMove {
+        let decision = match &self.brain {
+            Brain::Fair(opponent, view) => opponent.decide(view, cancel),
+            Brain::Mephisto(game) => Mephisto.decide(game, cancel),
+        }
+        .expect("an opponent always finds a legal action");
+        OpponentMove {
+            position: self.position,
+            action: decision.action,
+        }
+    }
+}
+
+/// A computed opponent move, to be passed to [`Session::finish_opponent`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpponentMove {
+    position: Position,
+    action: Action,
 }
 
 /// A running series. All randomness comes from the configured seed, so the
@@ -147,7 +244,15 @@ pub struct Session {
     config: SessionConfig,
     /// Source of the per-deal seeds.
     rng: ChaCha8Rng,
-    opponent: BaselineOpponent,
+    /// Source of the opponents' seeds: another stream, so they reveal
+    /// nothing about the deals.
+    ai_rng: ChaCha8Rng,
+    /// Seeds of players 1 and 2 for the current game.
+    ai_seeds: [u64; 2],
+    /// The forgetful opponent in the Goldfish mode, drawn per series.
+    goldfish: PlayerId,
+    /// Actions applied in the current game.
+    actions: usize,
     pub(crate) game: Game,
     game_seed: u64,
     number: u32,
@@ -162,10 +267,17 @@ impl Session {
     pub fn new(config: SessionConfig) -> Session {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
         let game_seed = rng.next_u64();
+        let mut ai_rng = ChaCha8Rng::seed_from_u64(config.seed);
+        ai_rng.set_stream(1);
+        let goldfish = PlayerId(1 + (ai_rng.next_u64() % 2) as u8);
+        let ai_seeds = [ai_rng.next_u64(), ai_rng.next_u64()];
         Session {
             config,
             rng,
-            opponent: BaselineOpponent,
+            ai_rng,
+            ai_seeds,
+            goldfish,
+            actions: 0,
             game: Game::new(game_seed, rule_config(config)),
             game_seed,
             number: 1,
@@ -208,6 +320,62 @@ impl Session {
                 .is_some_and(|s| !PlayerId::on_seat(s, self.dealer).is_human())
     }
 
+    /// The opponent decision due now, if an opponent has to act. Compute it
+    /// with [`OpponentJob::run`] (on any thread) and apply the result with
+    /// [`Session::finish_opponent`].
+    pub fn opponent_job(&self) -> Option<OpponentJob> {
+        if !self.opponent_to_move() {
+            return None;
+        }
+        let seat = self.game.current_seat()?;
+        let player = PlayerId::on_seat(seat, self.dealer);
+        let seed = self.ai_seeds[player.index() - 1];
+        // A fair opponent sees only its own seat's view (D-23).
+        let fair = |opponent: Opponent| Brain::Fair(opponent, Box::new(self.game.view(seat)));
+        let brain = match self.config.opponents {
+            Opponents::Levels(levels) => fair(Opponent::new(levels[player.index() - 1], seed)),
+            Opponents::Goldfish if player == self.goldfish => fair(Opponent {
+                profile: Profile::GOLDFISH,
+                seed,
+            }),
+            Opponents::Goldfish => fair(Opponent::new(Level::Medium, seed)),
+            Opponents::Mephisto => {
+                let declarer = self.game.declarer();
+                let partner = self.game.phase() == Phase::Spiel
+                    && declarer.is_some_and(|d| {
+                        d != seat && !PlayerId::on_seat(d, self.dealer).is_human()
+                    });
+                if partner {
+                    fair(Opponent::new(Level::Strong, seed))
+                } else {
+                    Brain::Mephisto(Box::new(self.game.clone()))
+                }
+            }
+        };
+        Some(OpponentJob {
+            level: self.config.level(player),
+            brain,
+            position: Position {
+                number: self.number,
+                actions: self.actions,
+                player: player.0,
+            },
+        })
+    }
+
+    /// Applies an opponent move computed by [`OpponentJob::run`]. Fails
+    /// without changes if the position changed in the meantime.
+    pub fn finish_opponent(&mut self, mv: OpponentMove) -> Result<Vec<AppEvent>, AppError> {
+        if self.finished {
+            return Err(AppError::SeriesFinished);
+        }
+        match self.opponent_job() {
+            Some(job) if job.position == mv.position => self.apply(mv.action),
+            Some(_) => Err(AppError::StaleOpponentMove),
+            None => Err(AppError::NoOpponentToMove),
+        }
+    }
+
     /// Runs opponent moves until the human has to act or the game is over.
     pub fn run_opponents(&mut self) -> Vec<AppEvent> {
         let mut events = Vec::new();
@@ -234,16 +402,8 @@ impl Session {
                 self.apply(action)
             }
             Command::AdvanceOpponent => {
-                if !self.opponent_to_move() {
-                    return Err(AppError::NoOpponentToMove);
-                }
-                let seat = self.game.current_seat().expect("opponent to move");
-                // The opponent sees only its own seat's view (D-23).
-                let action = self
-                    .opponent
-                    .decide(&self.game.view(seat))
-                    .expect("an opponent always finds a legal action");
-                self.apply(action)
+                let job = self.opponent_job().ok_or(AppError::NoOpponentToMove)?;
+                self.finish_opponent(job.run(None))
             }
             Command::NextGame => {
                 self.ensure_game_over()?;
@@ -272,6 +432,7 @@ impl Session {
 
     fn apply(&mut self, action: Action) -> Result<Vec<AppEvent>, AppError> {
         let core_events = self.game.apply(action).map_err(AppError::Rule)?;
+        self.actions += 1;
         let mut events: Vec<AppEvent> = core_events
             .into_iter()
             .map(|event| AppEvent::Game {
@@ -321,11 +482,18 @@ impl Session {
         self.number += 1;
         self.dealer = self.dealer.next();
         self.game_seed = self.rng.next_u64();
+        self.ai_seeds = [self.ai_rng.next_u64(), self.ai_rng.next_u64()];
+        self.actions = 0;
         self.game = Game::new(self.game_seed, rule_config(self.config));
         vec![AppEvent::GameStarted {
             number: self.number,
             dealer: self.dealer,
         }]
+    }
+
+    /// The forgetful opponent if the session plays the Goldfish mode.
+    pub fn goldfish(&self) -> Option<PlayerId> {
+        (self.config.opponents == Opponents::Goldfish).then_some(self.goldfish)
     }
 
     /// Score sheet so far.

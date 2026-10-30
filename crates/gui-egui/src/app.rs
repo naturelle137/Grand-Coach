@@ -4,9 +4,12 @@
 //! clicks into [`Command`]s. No game logic here.
 
 use eframe::egui::{self, Color32, RichText, Vec2};
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use skat_app::{
-    Action, Announcement, AppError, AppEvent, Card, CardSet, Command, Event, GameType, Phase,
-    PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit, TableView, reizwerte,
+    Action, Announcement, AppError, AppEvent, Cancel, Card, CardSet, Command, Event, GameType,
+    Level, OpponentMove, Opponents, Phase, PlayedCard, PlayerId, SeriesLength, Session,
+    SessionConfig, Suit, TableView, reizwerte,
 };
 
 use crate::cards::{self, Deck};
@@ -16,6 +19,7 @@ use crate::text;
 const CARD: Vec2 = Vec2::new(78.0, 117.0);
 const SMALL_CARD: Vec2 = Vec2::new(44.0, 66.0);
 const TABLE_GREEN: Color32 = Color32::from_rgb(34, 102, 58);
+const TABLE_RED: Color32 = Color32::from_rgb(110, 22, 26);
 
 /// Draft of the "new series" dialog.
 #[derive(Clone, Debug)]
@@ -23,7 +27,30 @@ struct NewSeries {
     free: bool,
     games: u16,
     kontra_re: bool,
+    mode: Mode,
+    levels: [Level; 2],
     seed: String,
+}
+
+/// Opponent choice in the "new series" dialog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Levels,
+    Goldfish,
+    Mephisto,
+}
+
+/// An opponent decision computed on a background thread. Dropping it
+/// cancels the computation (new series).
+struct Thinking {
+    result: Receiver<OpponentMove>,
+    cancel: Cancel,
+}
+
+impl Drop for Thinking {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 /// The Grand-Coach window.
@@ -41,6 +68,10 @@ pub struct GrandCoachApp {
     /// Seconds between two opponent moves; tests set 0.
     pub opponent_delay: f64,
     next_move_at: f64,
+    /// Opponent decision being computed.
+    thinking: Option<Thinking>,
+    /// Computed opponent move waiting for its turn to be shown.
+    ready: Option<OpponentMove>,
     /// Until when the last completed trick stays in the middle.
     show_trick_until: f64,
     new_series: Option<NewSeries>,
@@ -60,6 +91,8 @@ impl GrandCoachApp {
             error: None,
             opponent_delay: 0.8,
             next_move_at: 0.0,
+            thinking: None,
+            ready: None,
             show_trick_until: 0.0,
             new_series: None,
         }
@@ -82,7 +115,12 @@ impl GrandCoachApp {
 
     /// Sends a command to the session and keeps a rejection for display.
     fn send(&mut self, command: Command, now: f64) {
-        match self.session.execute(command) {
+        let result = self.session.execute(command);
+        self.handle(result, now);
+    }
+
+    fn handle(&mut self, result: Result<Vec<AppEvent>, AppError>, now: f64) {
+        match result {
             Ok(events) => {
                 self.error = None;
                 let trick_done = events.iter().any(|e| {
@@ -120,15 +158,46 @@ impl GrandCoachApp {
         self.send(Command::Act(action), now);
     }
 
-    /// Lets the opponents move at a readable pace.
+    /// Lets the opponents move at a readable pace. Each decision is
+    /// computed on a background thread, so the window stays responsive
+    /// while an opponent thinks; it starts at once and overlaps the pause.
     fn drive_opponents(&mut self, ctx: &egui::Context, now: f64) {
         if !self.session.opponent_to_move() {
+            self.thinking = None;
+            self.ready = None;
             return;
         }
-        if now >= self.next_move_at {
-            self.send(Command::AdvanceOpponent, now);
+        if self.thinking.is_none()
+            && self.ready.is_none()
+            && let Some(job) = self.session.opponent_job()
+        {
+            let (sender, result) = std::sync::mpsc::channel();
+            let cancel = Cancel::new();
+            let (stop, repaint) = (cancel.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                // The receiver is gone if the series was replaced meanwhile.
+                let _ = sender.send(job.run(Some(&stop)));
+                repaint.request_repaint();
+            });
+            self.thinking = Some(Thinking { result, cancel });
         }
-        let wait = (self.next_move_at - now).max(0.0);
+        if let Some(thinking) = &self.thinking {
+            match thinking.result.try_recv() {
+                Ok(mv) => {
+                    self.ready = Some(mv);
+                    self.thinking = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.thinking = None,
+            }
+        }
+        if now >= self.next_move_at
+            && let Some(mv) = self.ready.take()
+        {
+            let result = self.session.finish_opponent(mv);
+            self.handle(result, now);
+        }
+        let wait = (self.next_move_at - now).clamp(0.0, 0.05);
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
     }
 
@@ -191,6 +260,15 @@ impl GrandCoachApp {
             free,
             games,
             kontra_re: config.kontra_re,
+            mode: match config.opponents {
+                Opponents::Levels(_) => Mode::Levels,
+                Opponents::Goldfish => Mode::Goldfish,
+                Opponents::Mephisto => Mode::Mephisto,
+            },
+            levels: match config.opponents {
+                Opponents::Levels(levels) => levels,
+                _ => [Level::Medium; 2],
+            },
             seed: config.seed.wrapping_add(1).to_string(),
         });
     }
@@ -247,6 +325,22 @@ impl GrandCoachApp {
                         .strong(),
                 );
             }
+            ui.separator();
+            ui.label(match view.config.opponents {
+                Opponents::Levels([left, right]) => i.tf(
+                    "status-levels",
+                    &[
+                        ("left", i.t(level_message(left)).into()),
+                        ("right", i.t(level_message(right)).into()),
+                    ],
+                ),
+                Opponents::Goldfish => {
+                    i.tf("status-opponents", &[("mode", i.t("mode-goldfish").into())])
+                }
+                Opponents::Mephisto => {
+                    i.tf("status-opponents", &[("mode", i.t("mode-mephisto").into())])
+                }
+            });
             ui.separator();
             ui.label(i.tf(
                 "status-seed",
@@ -376,7 +470,7 @@ impl GrandCoachApp {
                         ui.spacing_mut().item_spacing.x = -SMALL_CARD.x * 0.6;
                         for _ in 0..info.cards {
                             ui.add(
-                                egui::Image::new(cards::image(cards::BACK))
+                                egui::Image::new(cards::image(self.back()))
                                     .fit_to_exact_size(SMALL_CARD),
                             );
                         }
@@ -394,7 +488,7 @@ impl GrandCoachApp {
                 ui.horizontal(|ui| {
                     for _ in 0..2 {
                         ui.add(
-                            egui::Image::new(cards::image(cards::BACK))
+                            egui::Image::new(cards::image(self.back()))
                                 .fit_to_exact_size(SMALL_CARD),
                         );
                     }
@@ -666,8 +760,8 @@ impl GrandCoachApp {
             for &card in &view.hand {
                 let selected = self.selected.contains(card);
                 let dim = playing && !playable.contains(&card);
-                let mut image = egui::Image::new(cards::image(&cards::face_path(self.deck, card)))
-                    .fit_to_exact_size(CARD);
+                let mut image =
+                    egui::Image::new(cards::image(&self.face(card))).fit_to_exact_size(CARD);
                 if dim {
                     image = image.tint(Color32::from_gray(150));
                 }
@@ -702,13 +796,35 @@ impl GrandCoachApp {
         }
     }
 
+    fn mephisto(&self) -> bool {
+        self.session.config().opponents == Opponents::Mephisto
+    }
+
+    /// Face of `card` in the chosen deck (path below `assets/cards/`); the
+    /// Mephisto variant while the session plays against Mephisto.
+    pub fn face(&self, card: Card) -> String {
+        cards::face_path(self.deck, card, self.mephisto())
+    }
+
+    /// Card back (path below `assets/cards/`); the Mephisto back while the
+    /// session plays against Mephisto.
+    pub fn back(&self) -> &'static str {
+        cards::back_path(self.mephisto())
+    }
+
+    /// Table colour: red against Mephisto, green otherwise.
+    pub fn table_color(&self) -> Color32 {
+        if self.mephisto() {
+            TABLE_RED
+        } else {
+            TABLE_GREEN
+        }
+    }
+
     fn card_image(&self, ui: &mut egui::Ui, card: Card, size: Vec2) {
         let label = text::card(&self.i18n, card);
-        ui.add(
-            egui::Image::new(cards::image(&cards::face_path(self.deck, card)))
-                .fit_to_exact_size(size),
-        )
-        .on_hover_text(label);
+        ui.add(egui::Image::new(cards::image(&self.face(card))).fit_to_exact_size(size))
+            .on_hover_text(label);
     }
 
     // ----------------------------------------------------------------------
@@ -733,6 +849,38 @@ impl GrandCoachApp {
                 );
                 ui.radio_value(&mut draft.free, true, self.t("series-free"));
                 ui.checkbox(&mut draft.kontra_re, self.t("option-kontra-re"));
+                ui.separator();
+                ui.radio_value(&mut draft.mode, Mode::Levels, self.t("mode-levels"));
+                for (k, id) in ["opponent-left", "opponent-right"].into_iter().enumerate() {
+                    ui.add_enabled_ui(draft.mode == Mode::Levels, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(self.t(id));
+                            for level in Level::ALL {
+                                let label = self.t(level_message(level));
+                                ui.radio_value(&mut draft.levels[k], level, label)
+                                    .on_hover_text(self.t(level_description(level)));
+                            }
+                        });
+                    });
+                }
+                ui.radio_value(&mut draft.mode, Mode::Goldfish, self.t("mode-goldfish"))
+                    .on_hover_text(self.t("mode-goldfish-description"));
+                ui.radio_value(&mut draft.mode, Mode::Mephisto, self.t("mode-mephisto"));
+                let mut notes = Vec::new();
+                match draft.mode {
+                    Mode::Levels => {
+                        notes.push(level_description(draft.levels[0]));
+                        if draft.levels[1] != draft.levels[0] {
+                            notes.push(level_description(draft.levels[1]));
+                        }
+                    }
+                    Mode::Goldfish => notes.push("mode-goldfish-description"),
+                    Mode::Mephisto => {}
+                }
+                for note in notes {
+                    ui.label(RichText::new(self.t(note)).small().weak());
+                }
+                ui.separator();
                 ui.horizontal(|ui| {
                     ui.label(self.t("series-seed"));
                     ui.text_edit_singleline(&mut draft.seed);
@@ -758,7 +906,14 @@ impl GrandCoachApp {
                     SeriesLength::Fixed(draft.games)
                 },
                 kontra_re: draft.kontra_re,
+                opponents: match draft.mode {
+                    Mode::Levels => Opponents::Levels(draft.levels),
+                    Mode::Goldfish => Opponents::Goldfish,
+                    Mode::Mephisto => Opponents::Mephisto,
+                },
             });
+            self.thinking = None;
+            self.ready = None;
             self.error = None;
             self.selected = CardSet::EMPTY;
             self.next_move_at = now + self.opponent_delay;
@@ -768,6 +923,26 @@ impl GrandCoachApp {
         } else {
             self.new_series = Some(draft);
         }
+    }
+}
+
+/// Message id of a strength level's name.
+fn level_message(level: Level) -> &'static str {
+    match level {
+        Level::Rookie => "level-rookie",
+        Level::Easy => "level-easy",
+        Level::Medium => "level-medium",
+        Level::Strong => "level-strong",
+    }
+}
+
+/// Message id of a strength level's description.
+fn level_description(level: Level) -> &'static str {
+    match level {
+        Level::Rookie => "level-rookie-description",
+        Level::Easy => "level-easy-description",
+        Level::Medium => "level-medium-description",
+        Level::Strong => "level-strong-description",
     }
 }
 
@@ -789,7 +964,7 @@ impl eframe::App for GrandCoachApp {
             ui.add_space(4.0);
         });
         egui::CentralPanel::default()
-            .frame(egui::Frame::central_panel(ui.style()).fill(TABLE_GREEN))
+            .frame(egui::Frame::central_panel(ui.style()).fill(self.table_color()))
             .show(ui, |ui| self.table(ui, &view, now));
         let ctx = ui.ctx().clone();
         self.new_series_window(&ctx, now);

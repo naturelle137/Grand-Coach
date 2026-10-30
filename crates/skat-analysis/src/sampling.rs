@@ -15,7 +15,7 @@
 
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::Rng;
-use skat_core::{Card, CardSet, PlayerView, Seat};
+use skat_core::{Card, CardSet, OmniscientView, PlayerView, Seat};
 
 use crate::knowledge::Knowledge;
 
@@ -39,6 +39,18 @@ pub struct World {
     pub hands: [CardSet; 3],
     /// Current Skat.
     pub skat: CardSet,
+}
+
+impl World {
+    /// The real distribution of a game. Full knowledge: only for uses that
+    /// may see every card (open mode, post-game analysis, the Mephisto
+    /// opponent); the argument type makes every use visible (D-23).
+    pub fn from_omniscient(all: &OmniscientView) -> World {
+        World {
+            hands: all.hands,
+            skat: all.skat,
+        }
+    }
 }
 
 /// Why a view does not describe a consistent information set.

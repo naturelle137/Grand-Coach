@@ -5,8 +5,13 @@
 //! deck in the manner of the Altenburger Bild. Every shape is drawn here;
 //! indices are stroked paths, so no font is needed to render them.
 //!
-//! Output paths are relative to `assets/cards/`: `<deck>/<suit>-<rank>.svg`
-//! and `back.svg`. Generated files are CC BY-SA 4.0 (`LICENSE-ASSETS`).
+//! Every deck also has a Mephisto variant (D-41): the Jacks (Unter) carry
+//! the index M and a devil, and the Kreuz (Eichel) cards an inverted cross
+//! as suit symbol. The Mephisto back shows flames in the gate to hell.
+//!
+//! Output paths are relative to `assets/cards/`: `<deck>/<suit>-<rank>.svg`,
+//! `mephisto/<deck>/<suit>-<rank>.svg`, `back.svg` and `mephisto/back.svg`. Generated files are
+//! CC BY-SA 4.0 (`LICENSE-ASSETS`).
 
 use std::fmt::Write;
 
@@ -49,15 +54,19 @@ const LICENSE: &str = "<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->";
 /// All generated files as (path below `assets/cards/`, SVG text).
 pub fn generate() -> Vec<(String, String)> {
     let mut files = Vec::new();
-    for deck in Deck::ALL {
-        for (s, suit) in SUITS.iter().enumerate() {
-            for (r, rank) in RANKS.iter().enumerate() {
-                let path = format!("{}/{suit}-{rank}.svg", deck.dir());
-                files.push((path, card(deck, s, r)));
+    for mephisto in [false, true] {
+        let prefix = if mephisto { "mephisto/" } else { "" };
+        for deck in Deck::ALL {
+            for (s, suit) in SUITS.iter().enumerate() {
+                for (r, rank) in RANKS.iter().enumerate() {
+                    let path = format!("{prefix}{}/{suit}-{rank}.svg", deck.dir());
+                    files.push((path, card(deck, s, r, mephisto)));
+                }
             }
         }
     }
     files.push(("back.svg".to_owned(), back()));
+    files.push(("mephisto/back.svg".to_owned(), mephisto_back()));
     files
 }
 
@@ -92,6 +101,51 @@ fn back() -> String {
         "<rect x=\"60\" y=\"110\" width=\"80\" height=\"80\" rx=\"10\" fill=\"#24489a\" stroke=\"#9fb4e8\" stroke-width=\"3\"/>\n",
     );
     body.push_str(&glyphs("GC", 74.0, 132.0, 0.6, "#ffffff"));
+    svg(&body)
+}
+
+/// The Mephisto back, shared by all decks: flames in the gate to hell.
+fn mephisto_back() -> String {
+    let mut body = outline("#1a0404");
+    body.push_str(
+        "<defs><pattern id=\"embers\" width=\"16\" height=\"16\" patternUnits=\"userSpaceOnUse\">\
+         <rect width=\"16\" height=\"16\" fill=\"#3a0606\"/>\
+         <path d=\"M0,8 L8,0 L16,8 L8,16 Z\" fill=\"none\" stroke=\"#8a1a10\" stroke-width=\"1.5\"/>\
+         </pattern>\
+         <radialGradient id=\"glow\" cx=\"0.5\" cy=\"0.85\" r=\"0.8\">\
+         <stop offset=\"0\" stop-color=\"#ff8c1a\"/><stop offset=\"0.45\" stop-color=\"#9a1408\"/>\
+         <stop offset=\"1\" stop-color=\"#120202\"/></radialGradient>\
+         <clipPath id=\"opening\"><path d=\"M58,266 L58,135 Q58,80 100,62 Q142,80 142,135 L142,266 Z\"/></clipPath>\
+         </defs>\n",
+    );
+    body.push_str(
+        "<rect x=\"12\" y=\"12\" width=\"176\" height=\"276\" rx=\"6\" fill=\"url(#embers)\" stroke=\"#8a1a10\" stroke-width=\"2\"/>\n",
+    );
+    // The gate: a pointed stone arch with joints, a keystone with horns
+    // and a step below.
+    body.push_str(
+        "<path d=\"M38,266 L38,128 Q38,58 100,38 Q162,58 162,128 L162,266 Z\" fill=\"#4a3434\" stroke=\"#120202\" stroke-width=\"3\"/>\n\
+         <path d=\"M38,170 L58,170 M38,218 L58,218 M142,170 L162,170 M142,218 L162,218 \
+         M40,124 L58,128 M160,124 L142,128 M56,74 L70,90 M144,74 L130,90\" stroke=\"#120202\" stroke-width=\"2\"/>\n\
+         <path d=\"M90,40 L110,40 L106,66 L94,66 Z\" fill=\"#5e4444\" stroke=\"#120202\" stroke-width=\"2\"/>\n\
+         <path d=\"M92,42 Q82,30 86,20 Q90,32 97,38 Z M108,42 Q118,30 114,20 Q110,32 103,38 Z\" fill=\"#7a0a0a\" stroke=\"#120202\" stroke-width=\"1.5\"/>\n\
+         <rect x=\"28\" y=\"264\" width=\"144\" height=\"14\" rx=\"2\" fill=\"#3a2828\" stroke=\"#120202\" stroke-width=\"2\"/>\n",
+    );
+    // The opening with the fire inside.
+    body.push_str(
+        "<g clip-path=\"url(#opening)\">\
+         <rect x=\"58\" y=\"60\" width=\"84\" height=\"206\" fill=\"url(#glow)\"/>\
+         <path d=\"M56,268 L56,220 Q66,190 70,200 Q72,160 84,140 Q84,170 92,175 Q94,130 104,96 Q110,140 116,150 \
+         Q122,130 128,118 Q128,165 134,180 Q140,170 144,190 L144,268 Z\" fill=\"#d42010\"/>\
+         <path d=\"M62,268 Q66,235 74,225 Q76,200 86,185 Q88,205 94,208 Q98,170 106,142 Q110,180 118,190 \
+         Q122,175 126,165 Q128,200 136,215 Q142,240 138,268 Z\" fill=\"#f07a10\"/>\
+         <path d=\"M74,268 Q76,245 86,235 Q90,220 96,205 Q100,225 104,228 Q108,205 114,195 Q118,225 124,240 \
+         Q130,255 126,268 Z\" fill=\"#ffd23a\"/>\
+         <circle cx=\"80\" cy=\"120\" r=\"2\" fill=\"#ffb020\"/><circle cx=\"122\" cy=\"100\" r=\"1.5\" fill=\"#ffb020\"/>\
+         <circle cx=\"96\" cy=\"84\" r=\"1.5\" fill=\"#ffd23a\"/>\
+         </g>\n\
+         <path d=\"M58,266 L58,135 Q58,80 100,62 Q142,80 142,135 L142,266\" fill=\"none\" stroke=\"#120202\" stroke-width=\"3\"/>\n",
+    );
     svg(&body)
 }
 
@@ -137,10 +191,23 @@ fn ink(deck: Deck, suit: usize) -> Ink {
     }
 }
 
-/// Suit symbol drawn in a 100 × 100 box centred on the origin.
-fn symbol(deck: Deck, suit: usize) -> String {
+/// Suit symbol drawn in a 100 × 100 box centred on the origin. `flipped`
+/// marks a symbol that is drawn rotated by 180°; the Mephisto cross is
+/// then drawn upright, so it appears inverted on the card.
+fn symbol(deck: Deck, suit: usize, mephisto: bool, flipped: bool) -> String {
     let i = ink(deck, suit);
     let (fill, stroke) = (i.fill, i.stroke);
+    if mephisto && suit == 0 {
+        // Inverted Latin cross: the crossbar sits below the centre.
+        let d = if flipped {
+            "M-7,-48 H7 V-26 H30 V-12 H7 V48 H-7 V-12 H-30 V-26 H-7 Z"
+        } else {
+            "M-7,-48 H7 V12 H30 V26 H7 V48 H-7 V26 H-30 V12 H-7 Z"
+        };
+        return format!(
+            "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"3\" stroke-linejoin=\"round\"/>"
+        );
+    }
     let path = |d: &str| {
         format!(
             "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"3\" stroke-linejoin=\"round\"/>"
@@ -220,6 +287,7 @@ fn glyph(c: char, color: &str) -> (f32, String) {
         'D' => (44.0, path("M7,3 V57 H17 C45,57 45,3 17,3 Z")),
         'K' => (44.0, path("M7,3 V57 M35,3 L7,37 M17,26 L37,57")),
         'A' => (44.0, path("M3,57 L20,3 L37,57 M9,39 H31")),
+        'M' => (44.0, path("M5,57 V3 L20,34 L35,3 V57")),
         'U' => (44.0, path("M6,3 V38 C6,62 34,62 34,38 V3")),
         'O' => (44.0, ellipse(20, 30, 16, 27)),
         'G' => (
@@ -243,8 +311,9 @@ fn glyphs(text: &str, x: f32, y: f32, scale: f32, color: &str) -> String {
     out
 }
 
-fn index_text(deck: Deck, rank: usize) -> &'static str {
+fn index_text(deck: Deck, rank: usize, mephisto: bool) -> &'static str {
     match (deck, rank) {
+        (_, 4) if mephisto => "M",
         (_, 0) => "7",
         (_, 1) => "8",
         (_, 2) => "9",
@@ -306,8 +375,36 @@ fn pips(rank: usize) -> &'static [(f32, f32)] {
     }
 }
 
-/// One half of a court figure (the upper one; the lower is rotated).
-fn figure(deck: Deck, suit: usize, rank: usize) -> String {
+/// The upper half of the Mephisto Jack: a devil with horns and a goatee.
+fn devil(deck: Deck, suit: usize, flipped: bool) -> String {
+    let i = ink(deck, suit);
+    let mut out = format!(
+        "<path d=\"M66,150 L76,116 Q100,104 124,116 L134,150 Z\" fill=\"{}\" stroke=\"#333\" stroke-width=\"2\"/>\
+         <path d=\"M88,108 L100,128 L112,108\" fill=\"#7a0a0a\" stroke=\"#333\" stroke-width=\"2\"/>\
+         <path d=\"M86,84 Q76,66 80,54 Q84,70 94,78 Z\" fill=\"#3a0606\" stroke=\"#222\" stroke-width=\"2\"/>\
+         <path d=\"M114,84 Q124,66 120,54 Q116,70 106,78 Z\" fill=\"#3a0606\" stroke=\"#222\" stroke-width=\"2\"/>\
+         <path d=\"M84,92 Q84,76 100,76 Q116,76 116,92 Q116,104 106,110 L100,122 L94,110 Q84,104 84,92 Z\" fill=\"#c8102e\" stroke=\"#333\" stroke-width=\"2\"/>\
+         <path d=\"M89,88 L97,91 M111,88 L103,91\" stroke=\"#1a1a1a\" stroke-width=\"2.5\" stroke-linecap=\"round\"/>\
+         <circle cx=\"94\" cy=\"94\" r=\"2\" fill=\"#f0d020\"/><circle cx=\"106\" cy=\"94\" r=\"2\" fill=\"#f0d020\"/>\
+         <path d=\"M93,103 Q100,108 107,103\" fill=\"none\" stroke=\"#1a1a1a\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
+        i.fill
+    );
+    out.push_str(&place(
+        &symbol(deck, suit, true, flipped),
+        64.0,
+        78.0,
+        0.2,
+        false,
+    ));
+    out
+}
+
+/// One half of a court figure (the upper one; the lower is the same half
+/// rotated, drawn with `flipped`).
+fn figure(deck: Deck, suit: usize, rank: usize, mephisto: bool, flipped: bool) -> String {
+    if mephisto && rank == 4 {
+        return devil(deck, suit, flipped);
+    }
     let i = ink(deck, suit);
     let mut out = format!(
         "<path d=\"M66,150 L76,116 Q100,104 124,116 L134,150 Z\" fill=\"{}\" stroke=\"#333\" stroke-width=\"2\"/>\
@@ -333,27 +430,37 @@ fn figure(deck: Deck, suit: usize, rank: usize) -> String {
         ),
     };
     out.push_str(&headwear);
-    out.push_str(&place(&symbol(deck, suit), 64.0, 78.0, 0.2, false));
+    out.push_str(&place(
+        &symbol(deck, suit, mephisto, flipped),
+        64.0,
+        78.0,
+        0.2,
+        false,
+    ));
     out
 }
 
-fn card(deck: Deck, suit: usize, rank: usize) -> String {
+fn card(deck: Deck, suit: usize, rank: usize, mephisto: bool) -> String {
     let i = ink(deck, suit);
     let mut body = outline("#ffffff");
-    let sym = symbol(deck, suit);
+    let sym = symbol(deck, suit, mephisto, false);
+    let flipped = symbol(deck, suit, mephisto, true);
     // Corner indices, top left and rotated bottom right.
-    let mut corner = glyphs(index_text(deck, rank), 12.0, 14.0, 0.42, i.index);
-    corner.push_str(&place(&sym, 24.0, 56.0, 0.2, false));
-    body.push_str(&corner);
+    let index = glyphs(index_text(deck, rank, mephisto), 12.0, 14.0, 0.42, i.index);
+    body.push_str(&index);
+    body.push_str(&place(&sym, 24.0, 56.0, 0.2, false));
     body.push_str(&format!(
-        "<g transform=\"rotate(180 {} {})\">\n{corner}</g>\n",
+        "<g transform=\"rotate(180 {} {})\">\n{index}{}</g>\n",
         W / 2.0,
-        H / 2.0
+        H / 2.0,
+        place(&flipped, 24.0, 56.0, 0.2, false)
     ));
     match rank {
         0..=3 => {
             for &(x, y) in pips(rank) {
-                body.push_str(&place(&sym, x, y, 0.34, y > 150.0));
+                let rotated = y > 150.0;
+                let pip = if rotated { &flipped } else { &sym };
+                body.push_str(&place(pip, x, y, 0.34, rotated));
             }
         }
         7 => body.push_str(&place(&sym, 100.0, 150.0, 0.9, false)),
@@ -371,10 +478,11 @@ fn card(deck: Deck, suit: usize, rank: usize) -> String {
                  <clipPath id=\"frame\"><rect x=\"44\" y=\"40\" width=\"112\" height=\"220\" rx=\"6\"/></clipPath>\n",
                 i.stroke
             );
-            let half = figure(deck, suit, rank);
+            let half = figure(deck, suit, rank, mephisto, false);
+            let lower = figure(deck, suit, rank, mephisto, true);
             let _ = write!(
                 body,
-                "<g clip-path=\"url(#frame)\">{half}<g transform=\"rotate(180 100 150)\">{half}</g></g>\n\
+                "<g clip-path=\"url(#frame)\">{half}<g transform=\"rotate(180 100 150)\">{lower}</g></g>\n\
                  <path d=\"M44,150 H156\" stroke=\"{}\" stroke-width=\"2\"/>\n",
                 i.stroke
             );

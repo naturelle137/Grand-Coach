@@ -1,9 +1,10 @@
 # Roadmap
 
-**Current status:** M3 done (shared analysis, issue #7,
-[analysis.md](analysis.md); accepted per D-39). The interactive smoke test
-on Windows 11 is still open (D-36,
-[testing.md](testing.md#platform-verification-m2)). Next: M4.
+**Current status:** M4 done (opponent levels, issue #9, [ai.md](ai.md),
+D-40, D-41): the maintainer closes it with the merge, although the
+interactive smoke test of the levels is still open. The interactive smoke
+test on Windows 11 is still open (D-36,
+[testing.md](testing.md#platform-verification-m2)). Next: M5.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
@@ -31,7 +32,7 @@ No individual tasks here.
   double-dummy) deliver winning chance and expected points for every
   decision, in playable time, backed by tests against known positions.
 
-- [ ] **M4 – Opponent AI with strength levels**
+- [x] **M4 – Opponent AI with strength levels**
   Done when 3–4 levels play measurably differently strong (AI-vs-AI series)
   and no level sees other players' cards.
 

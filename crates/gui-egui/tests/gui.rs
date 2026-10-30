@@ -10,9 +10,12 @@ use gui_egui::{Deck, GrandCoachApp, Language};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::{
-    Action, Announcement, Card, Command, GameType, Phase, PlayerId, SeriesLength, Session,
-    SessionConfig, Suit, TableView,
+    Action, Announcement, Card, Command, GameType, Level, Opponents, Phase, PlayerId, SeriesLength,
+    Session, SessionConfig, Suit, TableView,
 };
+
+const TABLE_GREEN: egui::Color32 = egui::Color32::from_rgb(34, 102, 58);
+const TABLE_RED: egui::Color32 = egui::Color32::from_rgb(110, 22, 26);
 
 fn harness(config: SessionConfig) -> Harness<'static, GrandCoachApp> {
     let mut harness = Harness::builder()
@@ -58,13 +61,15 @@ fn game_label(game: GameType) -> &'static str {
 }
 
 /// Lets the opponents move until the human acts or the game is over.
+/// Opponents think on a background thread, so frames wait a little.
 fn settle(harness: &mut Harness<'_, GrandCoachApp>) {
-    for _ in 0..500 {
+    for _ in 0..5000 {
         if !view(harness).opponent_to_move {
             harness.run_steps(3);
             return;
         }
         harness.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
     panic!("opponents did not finish their moves");
 }
@@ -147,6 +152,7 @@ fn series_played_entirely_by_clicks() {
             seed,
             series: SeriesLength::Fixed(6),
             kontra_re: true,
+            opponents: Opponents::Levels([Level::Easy; 2]),
         };
         let mut harness = harness(config);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -190,6 +196,7 @@ fn free_play_ends_on_request() {
         seed: 3,
         series: SeriesLength::Free,
         kontra_re: false,
+        opponents: Opponents::Levels([Level::Easy; 2]),
     };
     let mut harness = harness(config);
     let mut rng = ChaCha8Rng::seed_from_u64(3);
@@ -211,6 +218,7 @@ fn language_and_faces_switch_without_touching_the_game() {
         seed: 12,
         series: SeriesLength::Fixed(36),
         kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
     };
     let mut harness = harness(config);
     settle(&mut harness);
@@ -249,6 +257,7 @@ fn rejected_commands_show_translated_errors() {
             seed,
             series: SeriesLength::Fixed(1),
             kontra_re: false,
+            opponents: Opponents::Levels([Level::Easy; 2]),
         };
         let mut harness = harness(config);
         // Bid until the human is declarer or out.
@@ -286,13 +295,17 @@ fn every_card_face_renders() {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
     let mut faces = Vec::new();
-    for deck in Deck::ALL {
-        for index in 0..32 {
-            let card = Card::from_index(index).unwrap();
-            faces.push(gui_egui::cards::face_path(deck, card));
+    for mephisto in [false, true] {
+        for deck in Deck::ALL {
+            for index in 0..32 {
+                let card = Card::from_index(index).unwrap();
+                faces.push(gui_egui::cards::face_path(deck, card, mephisto));
+            }
         }
     }
-    faces.push(gui_egui::cards::BACK.to_owned());
+    for mephisto in [false, true] {
+        faces.push(gui_egui::cards::back_path(mephisto).to_owned());
+    }
     let mut seen = std::collections::BTreeSet::new();
     for path in faces {
         let egui::ImageSource::Bytes { uri, bytes } = gui_egui::cards::image(&path) else {
@@ -322,7 +335,7 @@ fn every_card_face_renders() {
             .count();
         assert!(corner > 20, "{path} has no visible index");
         // Within one deck no two faces look alike.
-        let deck = path.split('/').next().unwrap().to_owned();
+        let deck = path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
         let pixels: Vec<[u8; 4]> = image.pixels.iter().map(|p| p.to_array()).collect();
         assert!(
             seen.insert((deck, pixels)),
@@ -359,6 +372,7 @@ fn every_decision_and_variant_is_clickable() {
             seed,
             series: SeriesLength::Fixed(6),
             kontra_re: true,
+            opponents: Opponents::Levels([Level::Easy; 2]),
         };
         let mut harness = harness(config);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -449,6 +463,7 @@ fn table_shows_phase_turn_announcements_tricks_and_sheet() {
         seed: 21,
         series: SeriesLength::Fixed(3),
         kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
     };
     let mut harness = harness(config);
     settle(&mut harness);
@@ -499,6 +514,7 @@ fn ouvert_kontra_round() -> (SessionConfig, Vec<Command>) {
             seed,
             series: SeriesLength::Fixed(36),
             kontra_re: true,
+            opponents: Opponents::Levels([Level::Easy; 2]),
         };
         let mut session = Session::new(config);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -553,4 +569,104 @@ fn kein_kontra_before_an_opponents_ouvert_game_by_click() {
         "cards not revealed"
     );
     harness.get_by_label("Offene Karten:");
+}
+
+/// Each opponent's level is chosen by clicks in the "new series" dialog
+/// for a fixed series and for free play; the window stays responsive while
+/// a searching opponent thinks on its background thread.
+#[test]
+fn opponent_levels_are_chosen_per_opponent() {
+    let config = SessionConfig {
+        seed: 1,
+        series: SeriesLength::Fixed(36),
+        kontra_re: false,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    let name = |level: Level| match level {
+        Level::Rookie => "Grünschnabel",
+        Level::Easy => "Leicht",
+        Level::Medium => "Mittel",
+        Level::Strong => "Stark",
+    };
+    for (free, left, right) in [
+        (false, Level::Strong, Level::Rookie),
+        (true, Level::Easy, Level::Medium),
+    ] {
+        button(&mut harness, "Spiel");
+        button(&mut harness, "Neue Serie …");
+        if free {
+            click(&mut harness, Role::RadioButton, "Freies Spiel");
+        }
+        // Two rows of level buttons: the first row is the left opponent.
+        for (row, level) in [(0, left), (1, right)] {
+            let radios: Vec<_> = harness
+                .get_all_by_role_and_label(Role::RadioButton, name(level))
+                .collect();
+            assert_eq!(radios.len(), 2);
+            radios[row].click();
+            harness.run_steps(4);
+        }
+        button(&mut harness, "Starten");
+        let view = view(&harness);
+        assert_eq!(view.config.opponents, Opponents::Levels([left, right]));
+        assert_eq!(view.config.series == SeriesLength::Free, free);
+        let left_name = name(left);
+        let right_name = name(right);
+        harness.get_by_label(&format!(
+            "Gegner: {left_name} (links), {right_name} (rechts)"
+        ));
+        let card = view.hand[0];
+        assert!(!harness.state().face(card).starts_with("mephisto/"));
+        assert_eq!(harness.state().back(), "back.svg");
+        assert_eq!(harness.state().table_color(), TABLE_GREEN);
+    }
+    // Free play against Medium on the right: frames keep coming while the
+    // opponents think, and the game advances.
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
+    for _ in 0..3 {
+        let start = std::time::Instant::now();
+        settle(&mut harness);
+        assert!(start.elapsed() < std::time::Duration::from_secs(120));
+        if view(&harness).acting == Some(PlayerId::HUMAN) {
+            human_turn(&mut harness, &mut rng);
+        }
+    }
+    // The table modes: Goldfish, then Mephisto with its own card faces,
+    // card back and a red table.
+    for (label, opponents) in [
+        ("Goldfisch", Opponents::Goldfish),
+        ("Mephisto", Opponents::Mephisto),
+    ] {
+        button(&mut harness, "Spiel");
+        button(&mut harness, "Neue Serie …");
+        click(&mut harness, Role::RadioButton, label);
+        button(&mut harness, "Starten");
+        let view = view(&harness);
+        assert_eq!(view.config.opponents, opponents);
+        harness.get_by_label(&format!("Gegner: {label}"));
+        let mephisto = opponents == Opponents::Mephisto;
+        for &card in &view.hand {
+            let face = harness.state().face(card);
+            assert_eq!(face.starts_with("mephisto/"), mephisto, "{face}");
+        }
+        let (back, table) = if mephisto {
+            ("mephisto/back.svg", TABLE_RED)
+        } else {
+            ("back.svg", TABLE_GREEN)
+        };
+        assert_eq!(harness.state().back(), back);
+        assert_eq!(harness.state().table_color(), table);
+    }
+    // Back to single levels: green table and the usual back again.
+    button(&mut harness, "Spiel");
+    button(&mut harness, "Neue Serie …");
+    click(&mut harness, Role::RadioButton, "Gegner einzeln wählen");
+    button(&mut harness, "Starten");
+    assert!(matches!(
+        view(&harness).config.opponents,
+        Opponents::Levels(_)
+    ));
+    assert_eq!(harness.state().back(), "back.svg");
+    assert_eq!(harness.state().table_color(), TABLE_GREEN);
 }

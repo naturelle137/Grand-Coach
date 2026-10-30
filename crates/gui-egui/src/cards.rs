@@ -46,18 +46,26 @@ const RANKS: [&str; 8] = [
     "sieben", "acht", "neun", "zehn", "bube", "dame", "koenig", "ass",
 ];
 
-/// Path of a card face below `assets/cards/`.
-pub fn face_path(deck: Deck, card: Card) -> String {
+/// Path of a card face below `assets/cards/`; `mephisto` selects the
+/// Mephisto variant of the deck (D-41).
+pub fn face_path(deck: Deck, card: Card, mephisto: bool) -> String {
     format!(
-        "{}/{}-{}.svg",
+        "{}{}/{}-{}.svg",
+        if mephisto { "mephisto/" } else { "" },
         deck.dir(),
         SUITS[usize::from(card.suit().index())],
         RANKS[usize::from(card.rank().index())]
     )
 }
 
-/// Path of the card back.
-pub const BACK: &str = "back.svg";
+/// Path of the card back; `mephisto` selects the Mephisto back.
+pub fn back_path(mephisto: bool) -> &'static str {
+    if mephisto {
+        "mephisto/back.svg"
+    } else {
+        "back.svg"
+    }
+}
 
 /// Image source for a path below `assets/cards/`.
 pub fn image(path: &str) -> egui::ImageSource<'static> {

@@ -26,6 +26,23 @@ series-seed = Startwert (Seed):
 button-start = Starten
 button-cancel = Abbrechen
 
+## Opponents
+
+mode-levels = Gegner einzeln wählen
+level-rookie = Grünschnabel
+level-rookie-description = Grünschnabel: kennt die Regeln nur teilweise und vertut sich gelegentlich beim Reizen, bei der Spielwahl, beim Drücken und beim Ausspielen.
+mode-goldfish = Goldfisch
+mode-goldfish-description = Goldfisch: Ein zufällig bestimmter Gegner spielt stark, vergisst aber, welche Karten schon gefallen sind; der andere spielt auf Mittel.
+mode-mephisto = Mephisto
+opponent-left = Gegner links:
+opponent-right = Gegner rechts:
+level-easy = Leicht
+level-medium = Mittel
+level-strong = Stark
+level-easy-description = Leicht: spielt nach einfachen Faustregeln und rechnet nichts voraus.
+level-medium-description = Mittel: rechnet beim Kartenspiel und bei Kontra/Re einige mögliche Kartenverteilungen durch; reizt, drückt und sagt an nach Faustregeln.
+level-strong-description = Stark: wie Mittel, rechnet aber viermal so viele mögliche Kartenverteilungen durch. Die stärkste Stufe; überlegt etwas länger.
+
 ## Status line
 
 status-game = Spiel { $number } von { $total }
@@ -35,6 +52,8 @@ status-turn = Am Zug: { $player }
 status-bid = Reizwert: { $value }
 status-declarer = Alleinspieler: { $player }
 status-seed = Seed { $seed }
+status-levels = Gegner: { $left } (links), { $right } (rechts)
+status-opponents = Gegner: { $mode }
 status-waiting = { $player } überlegt …
 
 ## Players and seats
@@ -145,6 +164,7 @@ series-rank = { $rank }. { $player }: { $total } Punkte ({ $won } gewonnen, { $l
 
 error-not-your-turn = Du bist nicht am Zug.
 error-no-opponent-to-move = Kein Gegner ist am Zug.
+error-stale-opponent-move = Der Gegnerzug passt nicht mehr zur aktuellen Lage.
 error-game-in-progress = Das laufende Spiel ist noch nicht beendet.
 error-series-finished = Die Serie ist beendet. Starte eine neue Serie.
 error-not-free-play = Nur eine Serie im freien Spiel kann vorzeitig beendet werden.

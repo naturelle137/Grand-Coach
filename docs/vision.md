@@ -29,9 +29,10 @@ the opponents' shoes**.
 - If all players pass, the hand is **thrown in** (redealt). No Ramsch, no Bock.
 - Scoring per **Seeger-Fabian**.
 - **Series** with a fixed number of games (e.g. 36) and **free play**.
-- **Opponent strength in 3–4 levels**, differing in search depth, memory (do
-  they count cards?) and error rate. Opponents never cheat: they only see what
-  a human in their seat would see.
+- **Opponent strength in levels**: Rookie, Easy, Medium and Strong, plus
+  the table modes Goldfish and Mephisto (D-40, D-41, [ai.md](ai.md)).
+  Opponents only see what a human in their seat would see, except
+  Mephisto, which sees every card.
 - **Replay**: step through finished games trick by trick, with coach comments.
   **Replay the same deal** to try out alternatives.
 - Normal play without the coach.
