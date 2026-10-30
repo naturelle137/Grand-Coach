@@ -10,9 +10,9 @@ and agents only call it, so they cannot drift apart.
 |-------|------|------|----------|
 | Claude Code hooks (`.claude/settings.json`) | agent sessions, local and CI | – | activate the git hooks; block `--no-verify` and changing `core.hooksPath` |
 | `pre-commit` (`.githooks/`) | every commit | `quick` | local feedback; can be skipped by humans |
-| `pre-push` (`.githooks/`) | every push | `full --base` | local feedback; can be skipped by humans |
+| `pre-push` (`.githooks/`) | every push | `push --base` | local feedback; can be skipped by humans |
 | `implement-issue.yml` | after the agent, before the PR | `full --base` | red gate → draft PR with a warning |
-| CI `ci.yml`, job `ci-ok` | every PR and push to `main` | `lint`, `test` on Linux and Windows, MSRV | **required status check on `main`; the only hard gate** |
+| CI `ci.yml`, job `ci-ok` | every PR and push to `main` | `lint`, `test` (including slow tests) on Linux and Windows, MSRV | **required status check on `main`; the only hard gate** |
 | CI `ci.yml`, job `deep` | weekly and on demand | `deep` | scheduled-run failure mails the maintainer |
 
 Hooks are fast feedback, not security: anyone can skip them. Merge
@@ -35,13 +35,33 @@ snapshot; CI checks the real commit.
 
 - `lint` (seconds, no compilation): whitespace, SPDX headers, rustfmt,
   markdownlint (`.markdownlint-cli2.yaml`), shellcheck, actionlint.
-- `test`: clippy and `cargo test`, each with and without `--all-features`,
-  all `--locked`.
+- `test` (CI): clippy of the workspace with `--all-features`, clippy of
+  each package with features without them, and every test including the
+  slow ones (`--include-ignored`), all `--locked`.
 - `quick` (pre-commit): `lint`, plus clippy when code files are staged.
-- `full` (pre-push, default): `lint` and `test`. With `--base REV`, `test`
-  is skipped when no code file changed since REV.
-- `deep`: the seeded random games with `SKAT_RANDOM_GAMES` games (default
-  1,000,000) in release mode.
+- `push` (pre-push): `lint`; when code files changed since REV, clippy and
+  the fast tests of the affected packages. Affected are the packages whose
+  directory changed and every package depending on them (`cargo tree -i`);
+  a change to any other code file (manifests, lock file, toolchain,
+  `assets/`, the gate) affects all.
+- `full` (default; agents and `implement-issue.yml`): `lint` and `test`,
+  as in CI. With `--base REV`, `push` and `full` skip compiling and testing
+  when no code file changed since REV.
+- `deep`: in release mode, `SKAT_RANDOM_GAMES` seeded random games
+  (default 1,000,000) and `SKAT_MEPHISTO_GAMES` games with Mephisto on
+  every seat (default 100).
+
+**Slow tests.** A test that takes 2 s or more (measured alone,
+`--test-threads=1`) gets `#[ignore = "slow: CI only (docs/testing.md)"]`.
+Hooks skip it, CI runs it on every code change. Anything that takes
+minutes belongs in `deep`, with a small default run in `test`.
+
+**Features.** One `cargo test --workspace --all-features` covers
+everything: `skat-app` enables `serde` in every crate anyway (feature
+unification), so a workspace run without features would execute the same
+binaries. Without `serde` only derives and wire types are missing, so the
+`test` tier checks that configuration with clippy per package. If a
+feature ever changes behaviour, that package's tests also run without it.
 
 **Code files** (changes trigger `test`): `*.rs`, `Cargo.toml`,
 `Cargo.lock`, `rust-toolchain*`, `assets/`, `scripts/check.sh` and
@@ -64,14 +84,13 @@ actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 | Interface / contract | serde round-trips, determinism (seed → deal, replay); `skat-app` commands, events, view models and errors as JSON | `skat-core/tests/serde.rs`, `skat-app/tests/series.rs` | test |
 | Analysis | card counting, voids, visibility and hidden-card distributions on fixed positions; double-dummy against hand-solved positions and an exhaustive minimax; every decision type, information isolation, reproducibility, cancellation, Überreizen, Kontra/Re, Monte Carlo against exact enumeration | `skat-analysis/tests/` | test |
 | Performance | latency and estimation quality of the analysis per decision phase ([analysis.md](analysis.md#latency-target-and-benchmark)) | `skat-analysis/examples/bench.rs` | manual |
-| AI | strength profiles, information isolation by swapping concealed cards for every level and the Goldfish, reproducibility, fallback on cancellation and exhausted budgets, complete games, Rookie deviation rates, Goldfish forgetting, Mephisto never losing as declarer; background opponent moves and table modes through `skat-app` | `skat-ai/tests/`, `skat-ai/src/arena.rs`, `skat-app/tests/series.rs` | test |
+| AI | strength profiles, information isolation by swapping concealed cards for every level and the Goldfish, reproducibility, fallback on cancellation and exhausted budgets, complete games, Rookie deviation rates, Goldfish forgetting, Mephisto never losing as declarer (100 games in `deep`); background opponent moves and table modes through `skat-app` | `skat-ai/tests/`, `skat-ai/src/arena.rs`, `skat-app/tests/series.rs` | test, deep |
 | Calibration | AI-vs-AI strength ordering and decision latency per level ([ai.md](ai.md)) | `skat-ai/examples/calibrate.rs`, `skat-ai/examples/latency.rs` | manual |
 | System | whole games end to end: 10,000 seeded random games against an independent rule model; complete seeded 36-game series with a random human, information boundary of the human's view, opponent self-play | `skat-core/tests/random_games.rs`, `skat-app/tests/`, `skat-app/src/tests.rs`, `skat-ai` | test (10k), deep (1M) |
 | GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, every decision and game variant clicked at least once, table elements shown, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen`; `THIRD-PARTY-NOTICES` lists every crate in `Cargo.lock` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/`, `tools/notices/tests/` | test |
 | Manual smoke run | launch the window on each platform and play (see `CONTRIBUTING.md`) | – | per milestone |
 
-New crates follow the same pattern; anything that takes minutes belongs in
-`deep`, everything else in `test`.
+New crates follow the same pattern.
 
 ## Platform verification (M2)
 

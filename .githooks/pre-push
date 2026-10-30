@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 # Activate with: git config core.hooksPath .githooks (docs/testing.md)
-# Full gate per pushed ref; tests only run if code changed since what the
-# remote already has (or since origin/main for a new branch).
+# Fast gate per pushed ref: lint, plus clippy and the fast tests of the
+# packages affected since what the remote already has (or since origin/main
+# for a new branch). CI runs everything (docs/testing.md).
 set -euo pipefail
 check="$(git rev-parse --show-toplevel)/scripts/check.sh"
 zero=0000000000000000000000000000000000000000
@@ -13,5 +14,5 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     else
         base=$remote_sha
     fi
-    "$check" full --base "$base"
+    "$check" push --base "$base"
 done

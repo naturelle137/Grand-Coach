@@ -49,7 +49,8 @@ the result (a test compares them). After every `Cargo.lock` change, run
 
 All checks are bundled in
 one script; activate the git hooks once per clone so it runs automatically
-(`quick` before each commit, full gate before each push):
+(`quick` before each commit, `push` with the fast tests of the affected
+crates before each push):
 
 ```sh
 git config core.hooksPath .githooks
@@ -57,14 +58,16 @@ scripts/check.sh          # full gate, as in CI
 ```
 
 Tests only run when code files changed; docs-only changes are linted
-(including markdownlint). For the linters locally:
+(including markdownlint). Tests taking 2 s or more are marked
+`#[ignore = "slow: CI only (docs/testing.md)"]`; the hooks skip them, CI
+and `scripts/check.sh` run them. For the linters locally:
 `sudo dnf install nodejs ShellCheck`; missing ones are skipped with a
 warning. CI runs the same gate on every pull request; its check `ci-ok`
 must pass before a PR can be merged. Details: [docs/testing.md](docs/testing.md).
 
 Use `cargo fetch --locked` to download the locked dependencies in advance.
 Build and test commands can then use `--locked --offline`, for example
-`cargo test --locked --offline --all-features`. The test suite includes
+`cargo test --locked --offline --all-features -- --include-ignored`. The test suite includes
 10,000 seeded games and their deterministic replays, complete seeded
 series through `skat-app` and headless GUI tests that play series by
 clicks. The latency and estimation quality of the analysis are measured

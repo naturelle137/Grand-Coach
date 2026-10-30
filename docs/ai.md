@@ -159,8 +159,13 @@ for every level and the Goldfish, including a known own Skat and revealed
 Ouvert cards; `tests/levels.rs` covers profiles, reproducibility,
 complete games and the fallbacks; `tests/variants.rs` the Rookie's
 deviation rates, what the Goldfish forgets and that Mephisto never loses
-a game it declares. `skat-app/tests/series.rs` checks which decisions see
-every card in the Mephisto mode and the Goldfish draw.
+a game it declares (3 games in `test`, 100 in `deep`). With every card
+known and a node budget instead of a time limit, Mephisto's choices are
+exact and reproducible, so the test tolerates no loss: a lost game is a
+bug. Only a game in which the rules of thumb decided (exhausted budget)
+may be lost; at most 1 in 20 games may contain such a fallback.
+`skat-app/tests/series.rs` checks which decisions see every card in the
+Mephisto mode (fixed seeds) and the Goldfish draw.
 
 ## Calibration results
 

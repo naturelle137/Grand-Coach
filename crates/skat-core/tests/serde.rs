@@ -202,6 +202,7 @@ fn kontra_variants(start: &Game, cards: &[Card], out: &mut Vec<Game>) {
 /// `kontra_by`, `step` and `revealed` that deserialises must be a state that
 /// legal actions reach with the same cards played.
 #[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
 fn accepted_kontra_states_are_reachable() {
     let seats = Seat::ALL.map(|s| serde_json::to_value(s).unwrap());
     let mut steps = vec![serde_json::json!("Play"), serde_json::json!("AwaitRe")];

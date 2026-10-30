@@ -5,14 +5,19 @@
 # Usage: scripts/check.sh [TIER] [--base REV]
 #   lint   whitespace, SPDX headers, rustfmt, markdownlint, shellcheck,
 #          actionlint (seconds, no compilation)
-#   test   clippy and all tests, each with and without --all-features
+#   test   CI: clippy with all features, clippy of each crate without its
+#          features, and all tests including the slow ones (#[ignore])
 #   quick  pre-commit: lint, plus clippy when code files are staged
-#   full   pre-push (default): lint and test
+#   push   pre-push: lint, plus clippy and the fast tests of the packages
+#          affected by code changes since REV
+#   full   (default) lint and test, as in CI
 #   deep   scheduled CI: SKAT_RANDOM_GAMES seeded random games (default
-#          1,000,000), release build
+#          1,000,000) and SKAT_MEPHISTO_GAMES Mephisto games (default
+#          100), release build
 #   code-changed REV  exit 0 if code files changed since REV, 1 if not
 #
-# With --base REV, `full` skips `test` when no code file changed since REV.
+# With --base REV, `push` and `full` skip compiling and testing when no
+# code file changed since REV.
 # Linters missing locally are skipped with a warning; with CHECK_STRICT=1
 # (set in CI) a missing linter fails.
 set -euo pipefail
@@ -33,13 +38,53 @@ step() {
     "$@"
 }
 
-# Code changed since the merge base with REV, committed or not? An unknown
-# REV counts as changed.
+# Code files changed since the merge base with REV, committed or not. An
+# unknown REV prints `?`, which stands for "everything changed".
+changed_code() {
+    local mb
+    if ! mb=$(git merge-base "$1" HEAD 2>/dev/null); then
+        echo '?'
+        return
+    fi
+    { git diff --name-only "$mb" HEAD && git diff --name-only HEAD; } |
+        grep -E "$code_re" | sort -u || true
+}
+
 code_changed() {
-    local mb files
-    mb=$(git merge-base "$1" HEAD 2>/dev/null) || return 0
-    files=$(git diff --name-only "$mb" HEAD && git diff --name-only HEAD)
-    grep -qE "$code_re" <<<"$files"
+    [ -n "$(changed_code "$1")" ]
+}
+
+# Workspace packages to test after the code changes since REV: each package
+# whose directory changed and every package depending on it. Any other code
+# file (manifests, lock file, toolchain, assets, the gate) affects all and
+# prints `--workspace`. One cargo argument per line.
+affected() {
+    local files f dir pkgs=()
+    files=$(changed_code "$1")
+    if grep -qvE '^(crates|tools)/[^/]+/' <<<"$files"; then
+        echo --workspace
+        return
+    fi
+    while IFS= read -r f; do
+        dir=$(cut -d/ -f1-2 <<<"$f")
+        pkgs+=("$(sed -n 's/^name = "\(.*\)"/\1/p' "$dir/Cargo.toml" | head -n 1)")
+    done <<<"$files"
+    for f in $(printf '%s\n' "${pkgs[@]}" | sort -u); do
+        cargo tree --locked -i "$f" --workspace -e normal,dev --prefix none |
+            awk '{ print $1 }'
+    done | sort -u | awk '{ print "-p"; print }'
+}
+
+# Packages that declare features. Selected alone with `-p`, they build
+# without them; the whole workspace cannot, because `skat-app` enables
+# `serde` everywhere (feature unification).
+feature_packages() {
+    local f
+    for f in crates/*/Cargo.toml tools/*/Cargo.toml; do
+        if grep -q '^\[features\]' "$f"; then
+            sed -n 's/^name = "\(.*\)"/\1/p' "$f" | head -n 1
+        fi
+    done
 }
 
 have() {
@@ -98,14 +143,29 @@ lint() {
 }
 
 clippy() {
-    step cargo clippy --locked --all-targets -- -D warnings
-    step cargo clippy --locked --all-targets --all-features -- -D warnings
+    step cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+}
+
+# The only difference without features is compile-level (derives, wire
+# types), so clippy suffices (docs/testing.md).
+features_off() {
+    local p
+    for p in $(feature_packages); do
+        step cargo clippy --locked -p "$p" --all-targets -- -D warnings
+    done
 }
 
 run_tests() {
     clippy
-    step cargo test --locked
-    step cargo test --locked --all-features
+    features_off
+    step cargo test --locked --workspace --all-features -- --include-ignored
+}
+
+# Fast tests only: slow ones carry #[ignore = "slow: ..."] and run in CI.
+fast_tests() {
+    local pkgs
+    mapfile -t pkgs < <(affected "$1")
+    step cargo test --locked --all-features "${pkgs[@]}"
 }
 
 case $tier in
@@ -121,6 +181,18 @@ case $tier in
             clippy
         fi
         ;;
+    push)
+        lint
+        if [ -z "$base" ]; then
+            clippy
+            step cargo test --locked --workspace --all-features
+        elif code_changed "$base"; then
+            clippy
+            fast_tests "$base"
+        else
+            printf '\n==> no code changes since %s; tests skipped\n' "$base"
+        fi
+        ;;
     full)
         lint
         if [ -z "$base" ] || code_changed "$base"; then
@@ -131,14 +203,17 @@ case $tier in
         ;;
     deep)
         export SKAT_RANDOM_GAMES=${SKAT_RANDOM_GAMES:-1000000}
+        export SKAT_MEPHISTO_GAMES=${SKAT_MEPHISTO_GAMES:-100}
         step cargo test --locked --release -p skat-core --test random_games
+        step cargo test --locked --release -p skat-ai --test variants -- \
+            --include-ignored --exact mephisto_never_loses_a_game_it_declares
         ;;
     code-changed)
         code_changed "${2:?code-changed needs a revision}"
         exit
         ;;
     *)
-        echo "usage: $0 [lint|test|quick|full|deep] [--base REV] | code-changed REV" >&2
+        echo "usage: $0 [lint|test|quick|push|full|deep] [--base REV] | code-changed REV" >&2
         exit 2
         ;;
 esac
