@@ -146,6 +146,12 @@ fails otherwise.
 - Generated or drawn content under `assets/` and `docs/` is CC BY-SA 4.0
   (`LICENSE-ASSETS`). SVG files get an `SPDX-License-Identifier: CC-BY-SA-4.0`
   comment where practical.
-- Third-party graphics or libraries only with a compatible licence. Record
-  every third-party file in `docs/third-party.md` before committing it. No NC
-  or ND licences, no files of unclear origin.
+- Third-party graphics, fonts or libraries only under an allowed licence
+  (D-42; full list in `CONTRIBUTING.md`, "Allowed third-party licences"):
+  code MIT, MIT-0, Apache-2.0, BSD-2/3-Clause, ISC, Zlib, BSL-1.0,
+  Unicode-3.0, Unicode-DFS-2016, Unlicense, 0BSD, CC0-1.0, MPL-2.0; fonts
+  also OFL-1.1, Bitstream-Vera, Ubuntu-font-1.0; content also public domain, CC-BY-3.0,
+  CC-BY-4.0, CC-BY-SA-4.0. `A OR B` needs one allowed option, `A AND B`
+  all. Record every third-party file in `docs/third-party.md` before
+  committing it. Never add GPL/AGPL/LGPL-only, SSPL, BUSL, NC or ND
+  licences or files of unclear origin; anything else: ask the maintainer.

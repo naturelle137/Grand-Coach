@@ -81,8 +81,8 @@ cargo run --locked --release -p skat-ai --example latency
 ```
 
 New Rust
-dependencies must have a compatible licence and be listed in
-[docs/third-party.md](docs/third-party.md).
+dependencies must have an [allowed licence](#allowed-third-party-licences)
+and be listed in [docs/third-party.md](docs/third-party.md).
 
 ## Branching
 
@@ -134,3 +134,28 @@ By contributing you agree that code is licensed under the EUPL-1.2 and other
 content under CC BY-SA 4.0; see the licence section of the
 [README](README.md#licence) for the details, including SPDX headers and
 third-party files.
+
+### Allowed third-party licences
+
+Third-party code, libraries, fonts and content may enter the repository or
+the build only under these licences (SPDX identifiers, D-42). Record them in
+[docs/third-party.md](docs/third-party.md) first.
+
+- **Code and libraries (crates, copied code)**: MIT, MIT-0, Apache-2.0
+  (also `WITH LLVM-exception`), BSD-2-Clause, BSD-3-Clause, ISC, Zlib,
+  BSL-1.0, Unicode-3.0, Unicode-DFS-2016, Unlicense, 0BSD, CC0-1.0 and
+  MPL-2.0 (changed MPL files stay MPL-2.0).
+- **Fonts**: OFL-1.1, Bitstream-Vera, Ubuntu-font-1.0 (unchanged only) and the code
+  licences above.
+- **Graphics, sounds, texts**: public domain, CC0-1.0, CC-BY-3.0,
+  CC-BY-4.0, CC-BY-SA-4.0 and the permissive code licences above.
+- **Multiple licences** (`A OR B`): allowed if one option is on the list;
+  for `A AND B` every part must be. Note the chosen option if it is not
+  obvious.
+- **Development tools** that are only run, never shipped or copied (linters,
+  CI actions): any OSI-approved licence, GPL included.
+
+Not allowed: GPL, AGPL or LGPL only (no allowed alternative), SSPL, BUSL and
+other source-available licences, NC and ND licences, proprietary files and
+files of unclear origin. Anything not listed needs the maintainer's approval
+and a new D entry in [docs/decisions.md](docs/decisions.md).
