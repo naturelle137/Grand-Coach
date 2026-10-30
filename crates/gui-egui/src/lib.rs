@@ -5,6 +5,7 @@
 
 mod app;
 pub mod cards;
+pub mod coach;
 pub mod i18n;
 mod text;
 

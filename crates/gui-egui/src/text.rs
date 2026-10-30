@@ -172,6 +172,11 @@ pub fn error(i18n: &I18n, error: AppError) -> String {
         AppError::GameInProgress => i18n.t("error-game-in-progress"),
         AppError::SeriesFinished => i18n.t("error-series-finished"),
         AppError::NotFreePlay => i18n.t("error-not-free-play"),
+        AppError::NoDecision => i18n.t("error-no-decision"),
+        AppError::CoachOff => i18n.t("error-coach-off"),
+        AppError::NothingPending => i18n.t("error-nothing-pending"),
+        AppError::ActionPending => i18n.t("error-action-pending"),
+        AppError::StaleCoachResult => i18n.t("error-stale-coach-result"),
     }
 }
 

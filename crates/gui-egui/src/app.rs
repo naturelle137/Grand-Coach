@@ -7,12 +7,13 @@ use eframe::egui::{self, Color32, RichText, Vec2};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use skat_app::{
-    Action, Announcement, AppError, AppEvent, Cancel, Card, CardSet, Command, Event, GameType,
-    Level, OpponentMove, Opponents, Phase, PlayedCard, PlayerId, SeriesLength, Session,
-    SessionConfig, Suit, TableView, reizwerte,
+    Action, Advice, Announcement, AppError, AppEvent, Cancel, Card, CardSet, CoachLevel,
+    CoachResult, CoachSettings, Command, Event, GameType, Level, OpponentMove, Opponents, Pending,
+    Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit, TableView, reizwerte,
 };
 
 use crate::cards::{self, Deck};
+use crate::coach::{self, Style};
 use crate::i18n::{I18n, Language};
 use crate::text;
 
@@ -76,6 +77,19 @@ impl Drop for Thinking {
     }
 }
 
+/// A coach analysis computed on a background thread. Dropping it cancels
+/// the computation (the decision changed or a new series started).
+struct CoachThinking {
+    result: Receiver<CoachResult>,
+    cancel: Cancel,
+}
+
+impl Drop for CoachThinking {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
 /// The Grand-Coach window.
 pub struct GrandCoachApp {
     session: Session,
@@ -101,6 +115,8 @@ pub struct GrandCoachApp {
     /// Developer option: show the seed in the status line and let the
     /// "new series" dialog set it.
     show_seed: bool,
+    /// Coach analysis being computed.
+    coach_thinking: Option<CoachThinking>,
 }
 
 impl GrandCoachApp {
@@ -122,7 +138,18 @@ impl GrandCoachApp {
             show_trick_until: 0.0,
             new_series: None,
             show_seed: false,
+            coach_thinking: None,
         }
+    }
+
+    /// Sets the work budget of coach analyses (tests; default interactive).
+    pub fn set_coach_budget(&mut self, budget: skat_app::Budget) {
+        self.session.set_coach_budget(budget);
+    }
+
+    /// Changes the coach settings; the game keeps running.
+    pub fn set_coach(&mut self, settings: CoachSettings) {
+        self.send(Command::SetCoach(settings), 0.0);
     }
 
     /// The running session (read-only, for tests and diagnostics).
@@ -167,6 +194,13 @@ impl GrandCoachApp {
         match result {
             Ok(events) => {
                 self.error = None;
+                let moved = events
+                    .iter()
+                    .any(|e| matches!(e, AppEvent::Game { .. } | AppEvent::GameStarted { .. }));
+                if moved {
+                    // The decision changed: its analysis is no longer needed.
+                    self.coach_thinking = None;
+                }
                 let trick_done = events.iter().any(|e| {
                     matches!(
                         e,
@@ -245,6 +279,39 @@ impl GrandCoachApp {
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
     }
 
+    /// Runs the coach analysis the session asks for on a background thread
+    /// and hands the result back; the window stays responsive meanwhile.
+    fn drive_coach(&mut self, ctx: &egui::Context, now: f64) {
+        if self.coach_thinking.is_none()
+            && let Some(job) = self.session.coach_job()
+        {
+            let (sender, result) = std::sync::mpsc::channel();
+            let cancel = Cancel::new();
+            let (stop, repaint) = (cancel.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                // The receiver is gone if the decision changed meanwhile.
+                let _ = sender.send(job.run(Some(&stop)));
+                repaint.request_repaint();
+            });
+            self.coach_thinking = Some(CoachThinking { result, cancel });
+        }
+        if let Some(thinking) = &self.coach_thinking {
+            match thinking.result.try_recv() {
+                Ok(result) => {
+                    self.coach_thinking = None;
+                    match self.session.finish_coach(result) {
+                        Ok(events) => self.handle(Ok(events), now),
+                        // Computed for an earlier decision: ignore it.
+                        Err(AppError::StaleCoachResult) => {}
+                        Err(error) => self.error = Some(error),
+                    }
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.coach_thinking = None,
+            }
+        }
+    }
+
     fn t(&self, id: &str) -> String {
         self.i18n.t(id)
     }
@@ -291,12 +358,139 @@ impl GrandCoachApp {
                     ui.radio_value(&mut self.deck, deck, label);
                 }
                 ui.separator();
+                self.coach_settings(ui);
+                ui.separator();
                 ui.label(RichText::new(self.t("setting-developer")).strong());
                 let label = self.t("setting-show-seed");
                 ui.checkbox(&mut self.show_seed, label)
                     .on_hover_text(self.t("seed-description"));
             });
         });
+    }
+
+    fn coach_settings(&mut self, ui: &mut egui::Ui) {
+        let mut settings = self.session.coach_settings();
+        ui.label(RichText::new(self.t("menu-coach")).strong());
+        ui.label(self.t("setting-coach-level"));
+        for level in CoachLevel::ALL {
+            let label = self.t(coach_level_message(level));
+            ui.radio_value(&mut settings.level, level, label);
+        }
+        let label = self.t("setting-coach-warnings");
+        ui.checkbox(&mut settings.warnings, label)
+            .on_hover_text(self.t("setting-coach-warnings-description"));
+        let label = self.t("setting-coach-figures");
+        ui.checkbox(&mut settings.show_figures, label);
+        if settings != self.session.coach_settings() {
+            self.set_coach(settings);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Left: the coach.
+
+    fn coach_visible(view: &TableView) -> bool {
+        view.coach.settings.level != CoachLevel::Off || view.coach.pending.is_some()
+    }
+
+    fn coach_panel(&mut self, ui: &mut egui::Ui, view: &TableView, now: f64) {
+        let coach = &view.coach;
+        let human = view.acting == Some(PlayerId::HUMAN);
+        ui.heading(self.t("coach-title"));
+        if coach.help_available && human {
+            let asked = !matches!(coach.advice, Advice::None);
+            if ui
+                .add_enabled(!asked, egui::Button::new(self.t("button-coach-help")))
+                .clicked()
+            {
+                self.send(Command::RequestAdvice, now);
+            }
+        }
+        let view = &self.session.view();
+        let coach = &view.coach;
+        let i = &self.i18n;
+        let figures = coach.settings.show_figures;
+        ui.separator();
+        let mut lines = Vec::new();
+        match &coach.advice {
+            Advice::None if coach.analysing && human => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(i.t("coach-status-analysing"));
+                });
+            }
+            Advice::None if human => {
+                ui.label(RichText::new(i.t("coach-status-idle")).weak());
+            }
+            Advice::None => {
+                ui.label(RichText::new(i.t("coach-status-waiting")).weak());
+            }
+            Advice::Computing => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(i.t("coach-status-computing"));
+                });
+            }
+            Advice::Ready(e) | Advice::Provisional(e) => {
+                lines = coach::explanation(i, view, e, figures);
+            }
+            Advice::Unavailable(reason) => {
+                ui.label(coach::unavailable(i, *reason));
+            }
+        }
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for line in lines {
+                let text = RichText::new(line.text);
+                match line.style {
+                    Style::Heading => {
+                        ui.add_space(4.0);
+                        ui.label(text.strong().size(15.0));
+                    }
+                    Style::Strong => {
+                        ui.label(text.strong());
+                    }
+                    Style::Normal => {
+                        ui.label(text);
+                    }
+                    Style::Weak => {
+                        ui.label(text.weak().small());
+                    }
+                }
+            }
+        });
+    }
+
+    /// The warning before a weak action: proceed or decide again.
+    fn warning_window(&mut self, ctx: &egui::Context, view: &TableView, now: f64) {
+        let Some(Pending::Warning { warning, .. }) = &view.coach.pending else {
+            return;
+        };
+        let lines = coach::warning(&self.i18n, view, warning, view.coach.settings.show_figures);
+        let (mut proceed, mut back) = (false, false);
+        egui::Window::new(self.t("coach-warning-title"))
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                for line in lines {
+                    let text = RichText::new(line.text);
+                    ui.label(match line.style {
+                        Style::Strong | Style::Heading => text.strong(),
+                        Style::Weak => text.weak(),
+                        Style::Normal => text,
+                    });
+                }
+                ui.horizontal(|ui| {
+                    back = ui.button(self.t("button-coach-reconsider")).clicked();
+                    proceed = ui.button(self.t("button-coach-proceed")).clicked();
+                });
+            });
+        if proceed {
+            self.send(Command::ProceedAnyway, now);
+        } else if back {
+            self.send(Command::Reconsider, now);
+        }
     }
 
     /// Opens the "new series" dialog proposing the next seed.
@@ -644,6 +838,24 @@ impl GrandCoachApp {
                 }
                 return;
             }
+            match &view.coach.pending {
+                Some(Pending::Checking { action }) => {
+                    ui.spinner();
+                    ui.label(self.i18n.tf(
+                        "coach-checking",
+                        &[("action", coach::action(&self.i18n, view, *action).into())],
+                    ));
+                    if ui.button(self.t("button-coach-skip-check")).clicked() {
+                        self.send(Command::ProceedAnyway, now);
+                    }
+                    if ui.button(self.t("button-coach-reconsider")).clicked() {
+                        self.send(Command::Reconsider, now);
+                    }
+                    return;
+                }
+                Some(Pending::Warning { .. }) => return,
+                None => {}
+            }
             if let Some(acting) = view.acting.filter(|p| !p.is_human()) {
                 ui.label(
                     self.i18n
@@ -801,8 +1013,9 @@ impl GrandCoachApp {
                 _ => None,
             })
             .collect();
-        let discarding = view.phase == Phase::Druecken && view.acting == Some(PlayerId::HUMAN);
-        let playing = view.phase == Phase::Spiel && view.acting == Some(PlayerId::HUMAN);
+        let free = view.acting == Some(PlayerId::HUMAN) && view.coach.pending.is_none();
+        let discarding = view.phase == Phase::Druecken && free;
+        let playing = view.phase == Phase::Spiel && free;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for &card in &view.hand {
@@ -979,6 +1192,7 @@ impl GrandCoachApp {
                 });
             });
         if start && let Some(seed) = seed {
+            let coach = self.session.coach_settings();
             self.session = Session::new(SessionConfig {
                 seed,
                 series: if draft.free {
@@ -995,8 +1209,11 @@ impl GrandCoachApp {
             });
             self.thinking = None;
             self.ready = None;
+            self.coach_thinking = None;
             self.error = None;
             self.selected = CardSet::EMPTY;
+            // Coach settings belong to the player, not to the series.
+            let _ = self.session.execute(Command::SetCoach(coach));
             self.next_move_at = now + self.opponent_delay;
             self.new_series = None;
         } else if cancel || !open {
@@ -1023,6 +1240,16 @@ fn level_message(level: Level) -> &'static str {
     }
 }
 
+/// Message id of a coach level.
+fn coach_level_message(level: CoachLevel) -> &'static str {
+    match level {
+        CoachLevel::Off => "coach-level-off",
+        CoachLevel::OnRequest => "coach-level-on-request",
+        CoachLevel::Important => "coach-level-important",
+        CoachLevel::EveryMove => "coach-level-every-move",
+    }
+}
+
 /// Message id of a strength level's description.
 fn level_description(level: Level) -> &'static str {
     match level {
@@ -1039,6 +1266,7 @@ impl eframe::App for GrandCoachApp {
         // The opponents wait while the "new series" dialog is open.
         if self.new_series.is_none() {
             self.drive_opponents(ui.ctx(), now);
+            self.drive_coach(ui.ctx(), now);
         }
         let view = self.session.view();
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui, &view, now));
@@ -1053,10 +1281,18 @@ impl eframe::App for GrandCoachApp {
             self.hand(ui, &view, now);
             ui.add_space(4.0);
         });
+        // After the hand, so the hand keeps the full width (twelve cards
+        // when discarding).
+        if Self::coach_visible(&view) {
+            egui::Panel::left("coach")
+                .default_size(360.0)
+                .show(ui, |ui| self.coach_panel(ui, &view, now));
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(ui.style()).fill(self.table_color()))
             .show(ui, |ui| self.table(ui, &view, now));
         let ctx = ui.ctx().clone();
+        self.warning_window(&ctx, &view, now);
         self.new_series_window(&ctx, now);
         if now < self.show_trick_until {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(
