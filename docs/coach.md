@@ -70,7 +70,42 @@ distributions as the estimates.
 
 The coach runs one `analyze` with `Budget::INTERACTIVE` per human
 decision; `explain` is a single pass over the options. Its latency is the
-analysis latency in [analysis.md](analysis.md#latency-target-and-benchmark).
-The frontend stays responsive because the analysis runs on a background
-thread and is cancelled when the decision changes. An interactive
-measurement in the playable application is still open (issue #10).
+analysis latency, with the interactive target and reference measurement
+in [analysis.md](analysis.md#latency-target-and-benchmark).
+`skat-app/examples/coach_latency.rs` measures it as the frontend sees it:
+a session with the coach on "every move", time from `coach_job` to an
+accepted `finish_coach`, the human following the coach's best option,
+Medium opponents, Kontra/Re on, series seeds 1, 2, …, 10 positions per
+kind:
+
+```sh
+cargo run --locked --release -p skat-app --example coach_latency
+```
+
+Recorded on 2026-10-30 on a GitHub Actions runner (AMD EPYC 7763,
+4 vCPUs, 16 GB; series seeds 1–71, about 45 minutes), not on the
+reference hardware with 20 threads:
+
+| Decision | Median | p90 | Max | Incomplete |
+|----------|--------|-----|-----|------------|
+| Reizen | 5.5 s | 9.9 s | 26.6 s | 1 |
+| Hand/pickup | 3.3 s | 4.5 s | 5.0 s | 0 |
+| Drücken | 15.9 s | 36.2 s | 42.0 s | 0 |
+| Announcement | 6.8 s | 8.5 s | 12.8 s | 0 |
+| Kontra/Re | 0.6 s | 0.9 s | 3.0 s | 0 |
+| Card play, trick 1 | 0.7 s | 3.9 s | 14.7 s | 0 |
+| Card play, trick 4 | 10 ms | 38 ms | 135 ms | 0 |
+| Card play, trick 8 | 1 ms | 1 ms | 1 ms | 0 |
+
+Card play and Kontra/Re meet the interactive target even on four
+vCPUs; the decisions before card play exceed it there. The analysis
+spreads its work over all available threads, so fewer threads mean
+longer waits. The positions also differ from the analysis benchmark:
+every bidding decision counts, not only opening calls, and the human
+bids as the coach suggests. While the coach computes, the panel shows a translated
+"thinking" status and the player can act at any time; acting cancels the
+analysis. The GUI test `window_stays_responsive_while_the_coach_analyses`
+checks that frames keep returning quickly during a full interactive
+analysis and that acting works meanwhile. The interactive smoke test in
+the playable application on the reference hardware is still open
+(issue #10).
