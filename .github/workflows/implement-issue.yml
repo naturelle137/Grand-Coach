@@ -94,6 +94,10 @@ jobs:
         if: ${{ hashFiles('Cargo.lock') != '' }}
         uses: Swatinem/rust-cache@v2
 
+      # Software Vulkan (lavapipe) for headless frontend screenshots (D-45).
+      - name: Install lavapipe
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       - name: Create branch
         run: |
           git config user.name 'grand-coach-bot'
@@ -132,6 +136,10 @@ jobs:
               - the issue body with the genuinely done checklist items ticked
                 to `$RUNNER_TEMP/issue-body.md`. The workflow rejects any
                 change other than `[ ]` → `[x]`.
+            - Frontend changes: write the screenshots of the skill's step
+              "Screenshots" to `$RUNNER_TEMP/screenshots/` (PNG, names
+              `[a-z0-9-]+.png`) and embed them in the PR body as
+              `![caption](screenshots/<name>.png)`; the workflow uploads them.
             - Do not edit `.github/workflows/**` or security settings.
           # claude-code-action does not grant Bash by default and nobody can
           # approve tool prompts in CI. `Task` enables subagents from
@@ -186,6 +194,56 @@ jobs:
             printf 'Refs #%s\n\nClaude did not write a PR description; treat this as work in progress.\n' \
               "$ISSUE" > "$BODY_FILE"
           fi
+          # Screenshots (D-45): the agent's, or for a frontend change without
+          # any, the example's built-in scenarios. Uploaded to the orphan
+          # branch `screenshots` and embedded via their raw URLs.
+          SHOTS="$RUNNER_TEMP/screenshots"
+          SHOT_NOTE=""
+          if ! git diff --quiet "$BASE_SHA" HEAD -- crates/gui-egui assets &&
+              ! compgen -G "$SHOTS/*.png" > /dev/null; then
+            if cargo run --locked -p gui-egui --example screenshots -- "$SHOTS"; then
+              SHOT_NOTE="The agent provided no screenshots; these show the built-in scenarios of \`crates/gui-egui/examples/screenshots.rs\`."
+            else
+              echo "::warning::Rendering the screenshot scenarios failed."
+            fi
+          fi
+          if compgen -G "$SHOTS/*.png" > /dev/null; then
+            RAW="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/screenshots/issue-$ISSUE"
+            UPLOADED=()
+            for f in "$SHOTS"/*.png; do
+              name=$(basename "$f")
+              if ! [[ "$name" =~ ^[a-z0-9-]+\.png$ ]] || [ "$(stat -c %s "$f")" -gt 5000000 ]; then
+                echo "::warning::Skipping screenshot $name (name or size)."
+                continue
+              fi
+              API="repos/$GITHUB_REPOSITORY/contents/issue-$ISSUE/$name"
+              SHA=$(gh api "$API?ref=screenshots" --jq .sha 2>/dev/null) || SHA=""
+              base64 -w0 "$f" > "$RUNNER_TEMP/shot.b64"
+              jq -n --rawfile content "$RUNNER_TEMP/shot.b64" --arg sha "$SHA" \
+                  --arg message "docs: screenshot for #$ISSUE" \
+                  '{message: $message, content: $content, branch: "screenshots"}
+                   + (if $sha == "" then {} else {sha: $sha} end)' \
+                  > "$RUNNER_TEMP/shot.json"
+              if gh api -X PUT "$API" --input "$RUNNER_TEMP/shot.json" --silent; then
+                UPLOADED+=("$name")
+              else
+                echo "::warning::Uploading screenshot $name failed."
+              fi
+            done
+            sed -i "s#](screenshots/#]($RAW/#g" "$BODY_FILE"
+            if [ "${#UPLOADED[@]}" -gt 0 ] && ! grep -q "]($RAW/" "$BODY_FILE"; then
+              {
+                printf '\n## Screenshots\n\n'
+                if [ -n "$SHOT_NOTE" ]; then
+                  printf '%s\n\n' "$SHOT_NOTE"
+                fi
+                for name in "${UPLOADED[@]}"; do
+                  printf '![%s](%s/%s)\n\n' "${name%.png}" "$RAW" "$name"
+                done
+              } >> "$BODY_FILE"
+            fi
+          fi
+
           DRAFT=()
           if [ "$GATE" != "passed" ]; then
             DRAFT=(--draft)

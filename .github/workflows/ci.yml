@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.detect.outputs.code }}
+      gui: ${{ steps.detect.outputs.gui }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -47,11 +48,21 @@ jobs:
           # PR: its base; push: the previous tip; otherwise nothing (test all).
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] ||
-              scripts/check.sh code-changed "$BASE"; then
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "gui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if scripts/check.sh code-changed "$BASE"; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Frontend changes get screenshots (D-45).
+          if git diff --quiet "$BASE" HEAD -- crates/gui-egui assets; then
+            echo "gui=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "gui=true" >> "$GITHUB_OUTPUT"
           fi
 
   lint:
@@ -100,6 +111,33 @@ jobs:
           toolchain: '1.95'
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --locked --workspace --all-targets --all-features
+
+  # Renders the frontend headlessly and keeps the PNGs as a run artifact
+  # (D-45): lavapipe on Linux, WARP on Windows. Informational, not part of
+  # `ci-ok`.
+  screenshots:
+    needs: changes
+    if: needs.changes.outputs.gui == 'true'
+    name: screenshots (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: cargo run --locked -p gui-egui --example screenshots -- screenshots
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ runner.os }}
+          path: screenshots/
 
   deep:
     if: github.event_name == 'schedule' || inputs.deep
