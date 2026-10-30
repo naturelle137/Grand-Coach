@@ -10,8 +10,8 @@ use gui_egui::{Deck, GrandCoachApp, Language};
 use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::{
-    Action, Announcement, Card, Command, GameType, Level, Opponents, Phase, PlayerId, SeriesLength,
-    Session, SessionConfig, Suit, TableView,
+    Action, Announcement, Card, Command, GameType, Level, Opponents, Phase, PlayedCard, PlayerId,
+    SeriesLength, Session, SessionConfig, Suit, TableView,
 };
 
 const TABLE_GREEN: egui::Color32 = egui::Color32::from_rgb(34, 102, 58);
@@ -505,6 +505,95 @@ fn table_shows_phase_turn_announcements_tricks_and_sheet() {
     // After the game the result and the sheet line are visible.
     harness.get_by_label("Ergebnis");
     harness.get_by_label("Nächstes Spiel");
+}
+
+/// Checks that the shown trick lies as a triangle: left opponent's card
+/// left, right opponent's card right, the human's card below between them.
+fn assert_trick_triangle(harness: &Harness<'_, GrandCoachApp>, trick: &[PlayedCard]) {
+    let played = |p: PlayerId| trick.iter().any(|c| c.player == p);
+    // Names also head the opponent columns and the score sheet on the
+    // right; in the middle of the table they are the innermost ones.
+    let sheet = harness.get_by_label("Spielliste").rect().min.x;
+    let innermost = |label: &str, rightmost: bool| {
+        let rects = harness
+            .query_all_by_label(label)
+            .map(|n| n.rect())
+            .filter(|r| r.max.x < sheet);
+        if rightmost {
+            rects.max_by(|a, b| a.min.x.total_cmp(&b.min.x))
+        } else {
+            rects.min_by(|a, b| a.min.x.total_cmp(&b.min.x))
+        }
+        .unwrap()
+    };
+    let left = played(PlayerId(1)).then(|| innermost("Links", true));
+    let right = played(PlayerId(2)).then(|| innermost("Rechts", false));
+    let human = played(PlayerId::HUMAN).then(|| innermost("Du", false));
+    if let (Some(l), Some(r)) = (left, right) {
+        assert!(l.max.x < r.min.x, "left {l:?}, right {r:?}");
+        assert!((l.min.y - r.min.y).abs() < 1.0, "left {l:?}, right {r:?}");
+    }
+    if let Some(h) = human {
+        if let Some(l) = left {
+            assert!(
+                l.max.x < h.min.x && l.min.y < h.min.y,
+                "left {l:?}, human {h:?}"
+            );
+        }
+        if let Some(r) = right {
+            assert!(
+                h.max.x < r.min.x && r.min.y < h.min.y,
+                "human {h:?}, right {r:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn trick_cards_lie_on_the_side_of_their_player() {
+    let config = SessionConfig {
+        seed: 21,
+        series: SeriesLength::Fixed(2),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    // Simulated time (0.25 s per frame): opponents wait 2 s after the human's
+    // card, a completed trick stays in the middle for 4 s.
+    harness.state_mut().opponent_delay = 2.0;
+    let mut rng = ChaCha8Rng::seed_from_u64(21);
+    let (mut right_led, mut complete) = (false, false);
+    for _ in 0..200 {
+        settle(&mut harness);
+        let before = view(&harness);
+        if before.series_finished {
+            break;
+        }
+        if before.current_trick.len() == 2 {
+            assert_trick_triangle(&harness, &before.current_trick);
+        }
+        let action = human_turn(&mut harness, &mut rng);
+        if !matches!(action, Some(Action::Play(_))) {
+            continue;
+        }
+        let after = view(&harness);
+        let shown = if after.current_trick.is_empty() {
+            // In the middle of the table as well as in the side panel.
+            let titles = harness.query_all_by_label_contains(" sticht (").count();
+            assert_eq!(titles, 2, "completed trick not shown in the middle");
+            complete = true;
+            after.last_trick.expect("trick just completed").cards
+        } else {
+            after.current_trick
+        };
+        assert_trick_triangle(&harness, &shown);
+        // The case of issue #24: the right opponent leads, the human follows.
+        right_led |= shown[0].player == PlayerId(2);
+    }
+    assert!(
+        right_led && complete,
+        "right_led {right_led}, complete {complete}"
+    );
 }
 
 /// Finds, through `skat-app` alone, a series in which the human (holding 18
