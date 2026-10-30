@@ -8,7 +8,7 @@ and agents only call it, so they cannot drift apart.
 
 | Layer | Runs | Tier | Binding? |
 |-------|------|------|----------|
-| Claude Code hooks (`.claude/settings.json`) | agent sessions, local and CI | – | activate the git hooks; block `--no-verify` and changing `core.hooksPath` |
+| Claude Code hooks (`.claude/settings.json`) | agent sessions, local and CI | – | activate the git hooks; block `--no-verify` and changing `core.hooksPath`; in CI a Stop hook keeps the agent working until everything is committed and `check.sh push` is green |
 | `pre-commit` (`.githooks/`) | every commit | `quick` | local feedback; can be skipped by humans |
 | `pre-push` (`.githooks/`) | every push | `push --base` | local feedback; can be skipped by humans |
 | `implement-issue.yml` | after the agent, before the PR | `full --base` | red gate → draft PR with a warning |

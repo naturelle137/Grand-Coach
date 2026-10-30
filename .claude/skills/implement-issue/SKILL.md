@@ -38,6 +38,12 @@ Run `scripts/check.sh` (the full gate, see `docs/testing.md`) plus
 failing checks, and never bypass the git hooks or weaken a check or test
 to get green.
 
+- Wait for every check to finish; builds and tests take minutes. Run them
+  in the foreground with a long timeout, never in the background.
+- A failing pre-commit or pre-push hook is a finding to fix, not a reason
+  to stop: read its output, fix the lint, clippy or test failure, commit
+  again. You are done only when `git status` is clean and the gate is green.
+
 ## 3a. Screenshots (frontend changes)
 
 If the change affects what the frontend shows (`crates/gui-egui/`,

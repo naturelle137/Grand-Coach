@@ -113,6 +113,12 @@ jobs:
         # work; the push step reports the outcome instead.
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
+        env:
+          # Builds, clippy and tests (and the hooks running them) outlast the
+          # default 2-minute Bash timeout; a killed command must not look
+          # like a result.
+          BASH_DEFAULT_TIMEOUT_MS: '1800000'
+          BASH_MAX_TIMEOUT_MS: '3600000'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # API billing instead of the subscription:
@@ -141,6 +147,14 @@ jobs:
               `[a-z0-9-]+.png`) and embed them in the PR body as
               `![caption](screenshots/<name>.png)`; the workflow uploads them.
             - Do not edit `.github/workflows/**` or security settings.
+            - You are done only when all changes are committed, the commit
+              and pre-push gate (`scripts/check.sh push --base $BASE_SHA`)
+              pass, and the PR title and body are written. If a git hook
+              fails, read its output, fix the cause and commit again; never
+              stop with a red check, a pending command or a question. A
+              Stop hook enforces this. If the issue genuinely needs no code
+              change, explain why in `$RUNNER_TEMP/no-change-reason.md`
+              (it is posted publicly to the issue).
           # claude-code-action does not grant Bash by default and nobody can
           # approve tool prompts in CI. `Task` enables subagents from
           # `.claude/agents/`. Safety rests on human review of the PR.
@@ -151,6 +165,7 @@ jobs:
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,Task,TodoWrite,WebFetch,WebSearch,Skill"
 
       - name: Push branch and open PR
+        id: publish
         # Runs even when the agent failed, so partial work is not lost.
         if: ${{ !cancelled() }}
         env:
@@ -160,11 +175,31 @@ jobs:
           AGENT_OUTCOME: ${{ steps.claude.outcome }}
         run: |
           set -euo pipefail
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          # Work the agent left uncommitted must not vanish: commit it here
+          # (the agent itself may not skip hooks); the gate below then
+          # opens a draft PR.
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "needs_transcript=true" >> "$GITHUB_OUTPUT"
+            git add -A
+            git commit --no-verify -m "wip: uncommitted agent changes (#$ISSUE)" \
+              -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+          fi
           if [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]; then
-            echo "No commits produced for #$ISSUE (agent outcome: $AGENT_OUTCOME)."
+            REASON="$RUNNER_TEMP/no-change-reason.md"
+            if [ -s "$REASON" ] && [ "$AGENT_OUTCOME" = "success" ]; then
+              {
+                printf '🤖 Claude made no change for this issue ([workflow run](%s)). Reason:\n\n' "$RUN_URL"
+                head -c 4000 "$REASON"
+              } > "$RUNNER_TEMP/comment.md"
+              gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md"
+              exit 0
+            fi
+            echo "needs_transcript=true" >> "$GITHUB_OUTPUT"
+            echo "::error::No commits produced for #$ISSUE (agent outcome: $AGENT_OUTCOME)."
             gh issue comment "$ISSUE" --body \
-              "🤖 Claude produced no commits for this issue (agent outcome: \`$AGENT_OUTCOME\`). See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
-            exit 0
+              "🤖 Claude produced no commits for this issue (agent outcome: \`$AGENT_OUTCOME\`). See the [workflow run]($RUN_URL); its encrypted transcript is attached there if configured."
+            exit 1
           fi
 
           # claude-code-action repoints origin at its own token, which may not
@@ -179,6 +214,9 @@ jobs:
           if git cat-file -e "$BASE_SHA:scripts/check.sh" 2>/dev/null; then
             git show "$BASE_SHA:scripts/check.sh" > "$RUNNER_TEMP/check.sh"
             bash "$RUNNER_TEMP/check.sh" full --base "$BASE_SHA" || GATE="failed"
+          fi
+          if [ "$GATE" != "passed" ]; then
+            echo "needs_transcript=true" >> "$GITHUB_OUTPUT"
           fi
           # The gate just ran; skip the pre-push hook.
           git push --no-verify --set-upstream origin "$BRANCH"
@@ -295,3 +333,41 @@ jobs:
 
           gh issue comment "$ISSUE" --body \
             "🤖 Claude opened a PR for this issue: $PR_URL (agent outcome: \`$AGENT_OUTCOME\`; gate $GATE; $CHECKS)."
+
+      # The transcript can contain repository content and command output, and
+      # logs and artifacts of a public repository are readable by any
+      # signed-in user. So it is kept only when something went wrong, and
+      # only encrypted to the maintainer's age key (repository variable
+      # TRANSCRIPT_AGE_RECIPIENT, an `age1…` public key). Decrypt with:
+      #   age -d -i key.txt claude-transcript.json.age > transcript.json
+      - name: Encrypt agent transcript
+        id: transcript
+        if: >-
+          ${{ !cancelled() && steps.claude.outputs.execution_file != '' &&
+              (steps.claude.outcome != 'success' ||
+               steps.publish.outcome == 'failure' ||
+               steps.publish.outputs.needs_transcript == 'true') }}
+        env:
+          RECIPIENT: ${{ vars.TRANSCRIPT_AGE_RECIPIENT }}
+          EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RECIPIENT" =~ ^age1[0-9a-z]+$ ]]; then
+            echo "::warning::TRANSCRIPT_AGE_RECIPIENT is not set; transcript not kept."
+            exit 0
+          fi
+          if [ ! -s "$EXEC_FILE" ]; then
+            echo "::warning::No transcript file found."
+            exit 0
+          fi
+          command -v age > /dev/null || sudo apt-get install -y age
+          age -r "$RECIPIENT" -o "$RUNNER_TEMP/claude-transcript.json.age" "$EXEC_FILE"
+          echo "file=$RUNNER_TEMP/claude-transcript.json.age" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted transcript
+        if: ${{ !cancelled() && steps.transcript.outputs.file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-transcript-issue-${{ inputs.issue }}
+          path: ${{ steps.transcript.outputs.file }}
+          retention-days: 14
