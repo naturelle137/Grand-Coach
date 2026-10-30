@@ -126,7 +126,9 @@ Table mode `Opponents::Mephisto` in `skat-app`, decided by
   analysis decides, with the other seats modelled by the rules of thumb.
 - Node budget `Mephisto::BUDGET`: 10⁸ nodes per task, as
   `Budget::INTERACTIVE`. Without an estimate the rules of thumb decide.
-- The GUI shows the Mephisto variant of the chosen card faces (D-41).
+- The GUI shows the Mephisto variant of the chosen card faces, the
+  Mephisto back (flames in the gate to hell) and a red instead of the
+  green table, only in this mode (D-41).
 
 ## Information boundary and determinism
 

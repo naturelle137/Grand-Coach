@@ -19,6 +19,7 @@ use crate::text;
 const CARD: Vec2 = Vec2::new(78.0, 117.0);
 const SMALL_CARD: Vec2 = Vec2::new(44.0, 66.0);
 const TABLE_GREEN: Color32 = Color32::from_rgb(34, 102, 58);
+const TABLE_RED: Color32 = Color32::from_rgb(110, 22, 26);
 
 /// Draft of the "new series" dialog.
 #[derive(Clone, Debug)]
@@ -469,7 +470,7 @@ impl GrandCoachApp {
                         ui.spacing_mut().item_spacing.x = -SMALL_CARD.x * 0.6;
                         for _ in 0..info.cards {
                             ui.add(
-                                egui::Image::new(cards::image(cards::BACK))
+                                egui::Image::new(cards::image(self.back()))
                                     .fit_to_exact_size(SMALL_CARD),
                             );
                         }
@@ -487,7 +488,7 @@ impl GrandCoachApp {
                 ui.horizontal(|ui| {
                     for _ in 0..2 {
                         ui.add(
-                            egui::Image::new(cards::image(cards::BACK))
+                            egui::Image::new(cards::image(self.back()))
                                 .fit_to_exact_size(SMALL_CARD),
                         );
                     }
@@ -795,11 +796,29 @@ impl GrandCoachApp {
         }
     }
 
+    fn mephisto(&self) -> bool {
+        self.session.config().opponents == Opponents::Mephisto
+    }
+
     /// Face of `card` in the chosen deck (path below `assets/cards/`); the
     /// Mephisto variant while the session plays against Mephisto.
     pub fn face(&self, card: Card) -> String {
-        let mephisto = self.session.config().opponents == Opponents::Mephisto;
-        cards::face_path(self.deck, card, mephisto)
+        cards::face_path(self.deck, card, self.mephisto())
+    }
+
+    /// Card back (path below `assets/cards/`); the Mephisto back while the
+    /// session plays against Mephisto.
+    pub fn back(&self) -> &'static str {
+        cards::back_path(self.mephisto())
+    }
+
+    /// Table colour: red against Mephisto, green otherwise.
+    pub fn table_color(&self) -> Color32 {
+        if self.mephisto() {
+            TABLE_RED
+        } else {
+            TABLE_GREEN
+        }
     }
 
     fn card_image(&self, ui: &mut egui::Ui, card: Card, size: Vec2) {
@@ -945,7 +964,7 @@ impl eframe::App for GrandCoachApp {
             ui.add_space(4.0);
         });
         egui::CentralPanel::default()
-            .frame(egui::Frame::central_panel(ui.style()).fill(TABLE_GREEN))
+            .frame(egui::Frame::central_panel(ui.style()).fill(self.table_color()))
             .show(ui, |ui| self.table(ui, &view, now));
         let ctx = ui.ctx().clone();
         self.new_series_window(&ctx, now);

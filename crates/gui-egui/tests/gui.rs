@@ -14,6 +14,9 @@ use skat_app::{
     Session, SessionConfig, Suit, TableView,
 };
 
+const TABLE_GREEN: egui::Color32 = egui::Color32::from_rgb(34, 102, 58);
+const TABLE_RED: egui::Color32 = egui::Color32::from_rgb(110, 22, 26);
+
 fn harness(config: SessionConfig) -> Harness<'static, GrandCoachApp> {
     let mut harness = Harness::builder()
         .with_size([1600.0, 1000.0])
@@ -300,7 +303,9 @@ fn every_card_face_renders() {
             }
         }
     }
-    faces.push(gui_egui::cards::BACK.to_owned());
+    for mephisto in [false, true] {
+        faces.push(gui_egui::cards::back_path(mephisto).to_owned());
+    }
     let mut seen = std::collections::BTreeSet::new();
     for path in faces {
         let egui::ImageSource::Bytes { uri, bytes } = gui_egui::cards::image(&path) else {
@@ -613,6 +618,8 @@ fn opponent_levels_are_chosen_per_opponent() {
         ));
         let card = view.hand[0];
         assert!(!harness.state().face(card).starts_with("mephisto/"));
+        assert_eq!(harness.state().back(), "back.svg");
+        assert_eq!(harness.state().table_color(), TABLE_GREEN);
     }
     // Free play against Medium on the right: frames keep coming while the
     // opponents think, and the game advances.
@@ -625,7 +632,8 @@ fn opponent_levels_are_chosen_per_opponent() {
             human_turn(&mut harness, &mut rng);
         }
     }
-    // The table modes: Goldfish, then Mephisto with its own card faces.
+    // The table modes: Goldfish, then Mephisto with its own card faces,
+    // card back and a red table.
     for (label, opponents) in [
         ("Goldfisch", Opponents::Goldfish),
         ("Mephisto", Opponents::Mephisto),
@@ -642,8 +650,15 @@ fn opponent_levels_are_chosen_per_opponent() {
             let face = harness.state().face(card);
             assert_eq!(face.starts_with("mephisto/"), mephisto, "{face}");
         }
+        let (back, table) = if mephisto {
+            ("mephisto/back.svg", TABLE_RED)
+        } else {
+            ("back.svg", TABLE_GREEN)
+        };
+        assert_eq!(harness.state().back(), back);
+        assert_eq!(harness.state().table_color(), table);
     }
-    // Back to single levels.
+    // Back to single levels: green table and the usual back again.
     button(&mut harness, "Spiel");
     button(&mut harness, "Neue Serie …");
     click(&mut harness, Role::RadioButton, "Gegner einzeln wählen");
@@ -652,4 +667,6 @@ fn opponent_levels_are_chosen_per_opponent() {
         view(&harness).config.opponents,
         Opponents::Levels(_)
     ));
+    assert_eq!(harness.state().back(), "back.svg");
+    assert_eq!(harness.state().table_color(), TABLE_GREEN);
 }

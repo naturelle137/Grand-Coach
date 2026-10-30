@@ -7,10 +7,10 @@
 //!
 //! Every deck also has a Mephisto variant (D-41): the Jacks (Unter) carry
 //! the index M and a devil, and the Kreuz (Eichel) cards an inverted cross
-//! as suit symbol.
+//! as suit symbol. The Mephisto back shows flames in the gate to hell.
 //!
 //! Output paths are relative to `assets/cards/`: `<deck>/<suit>-<rank>.svg`,
-//! `mephisto/<deck>/<suit>-<rank>.svg` and `back.svg`. Generated files are
+//! `mephisto/<deck>/<suit>-<rank>.svg`, `back.svg` and `mephisto/back.svg`. Generated files are
 //! CC BY-SA 4.0 (`LICENSE-ASSETS`).
 
 use std::fmt::Write;
@@ -66,6 +66,7 @@ pub fn generate() -> Vec<(String, String)> {
         }
     }
     files.push(("back.svg".to_owned(), back()));
+    files.push(("mephisto/back.svg".to_owned(), mephisto_back()));
     files
 }
 
@@ -100,6 +101,51 @@ fn back() -> String {
         "<rect x=\"60\" y=\"110\" width=\"80\" height=\"80\" rx=\"10\" fill=\"#24489a\" stroke=\"#9fb4e8\" stroke-width=\"3\"/>\n",
     );
     body.push_str(&glyphs("GC", 74.0, 132.0, 0.6, "#ffffff"));
+    svg(&body)
+}
+
+/// The Mephisto back, shared by all decks: flames in the gate to hell.
+fn mephisto_back() -> String {
+    let mut body = outline("#1a0404");
+    body.push_str(
+        "<defs><pattern id=\"embers\" width=\"16\" height=\"16\" patternUnits=\"userSpaceOnUse\">\
+         <rect width=\"16\" height=\"16\" fill=\"#3a0606\"/>\
+         <path d=\"M0,8 L8,0 L16,8 L8,16 Z\" fill=\"none\" stroke=\"#8a1a10\" stroke-width=\"1.5\"/>\
+         </pattern>\
+         <radialGradient id=\"glow\" cx=\"0.5\" cy=\"0.85\" r=\"0.8\">\
+         <stop offset=\"0\" stop-color=\"#ff8c1a\"/><stop offset=\"0.45\" stop-color=\"#9a1408\"/>\
+         <stop offset=\"1\" stop-color=\"#120202\"/></radialGradient>\
+         <clipPath id=\"opening\"><path d=\"M58,266 L58,135 Q58,80 100,62 Q142,80 142,135 L142,266 Z\"/></clipPath>\
+         </defs>\n",
+    );
+    body.push_str(
+        "<rect x=\"12\" y=\"12\" width=\"176\" height=\"276\" rx=\"6\" fill=\"url(#embers)\" stroke=\"#8a1a10\" stroke-width=\"2\"/>\n",
+    );
+    // The gate: a pointed stone arch with joints, a keystone with horns
+    // and a step below.
+    body.push_str(
+        "<path d=\"M38,266 L38,128 Q38,58 100,38 Q162,58 162,128 L162,266 Z\" fill=\"#4a3434\" stroke=\"#120202\" stroke-width=\"3\"/>\n\
+         <path d=\"M38,170 L58,170 M38,218 L58,218 M142,170 L162,170 M142,218 L162,218 \
+         M40,124 L58,128 M160,124 L142,128 M56,74 L70,90 M144,74 L130,90\" stroke=\"#120202\" stroke-width=\"2\"/>\n\
+         <path d=\"M90,40 L110,40 L106,66 L94,66 Z\" fill=\"#5e4444\" stroke=\"#120202\" stroke-width=\"2\"/>\n\
+         <path d=\"M92,42 Q82,30 86,20 Q90,32 97,38 Z M108,42 Q118,30 114,20 Q110,32 103,38 Z\" fill=\"#7a0a0a\" stroke=\"#120202\" stroke-width=\"1.5\"/>\n\
+         <rect x=\"28\" y=\"264\" width=\"144\" height=\"14\" rx=\"2\" fill=\"#3a2828\" stroke=\"#120202\" stroke-width=\"2\"/>\n",
+    );
+    // The opening with the fire inside.
+    body.push_str(
+        "<g clip-path=\"url(#opening)\">\
+         <rect x=\"58\" y=\"60\" width=\"84\" height=\"206\" fill=\"url(#glow)\"/>\
+         <path d=\"M56,268 L56,220 Q66,190 70,200 Q72,160 84,140 Q84,170 92,175 Q94,130 104,96 Q110,140 116,150 \
+         Q122,130 128,118 Q128,165 134,180 Q140,170 144,190 L144,268 Z\" fill=\"#d42010\"/>\
+         <path d=\"M62,268 Q66,235 74,225 Q76,200 86,185 Q88,205 94,208 Q98,170 106,142 Q110,180 118,190 \
+         Q122,175 126,165 Q128,200 136,215 Q142,240 138,268 Z\" fill=\"#f07a10\"/>\
+         <path d=\"M74,268 Q76,245 86,235 Q90,220 96,205 Q100,225 104,228 Q108,205 114,195 Q118,225 124,240 \
+         Q130,255 126,268 Z\" fill=\"#ffd23a\"/>\
+         <circle cx=\"80\" cy=\"120\" r=\"2\" fill=\"#ffb020\"/><circle cx=\"122\" cy=\"100\" r=\"1.5\" fill=\"#ffb020\"/>\
+         <circle cx=\"96\" cy=\"84\" r=\"1.5\" fill=\"#ffd23a\"/>\
+         </g>\n\
+         <path d=\"M58,266 L58,135 Q58,80 100,62 Q142,80 142,135 L142,266\" fill=\"none\" stroke=\"#120202\" stroke-width=\"3\"/>\n",
+    );
     svg(&body)
 }
 

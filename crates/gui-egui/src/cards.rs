@@ -58,8 +58,14 @@ pub fn face_path(deck: Deck, card: Card, mephisto: bool) -> String {
     )
 }
 
-/// Path of the card back.
-pub const BACK: &str = "back.svg";
+/// Path of the card back; `mephisto` selects the Mephisto back.
+pub fn back_path(mephisto: bool) -> &'static str {
+    if mephisto {
+        "mephisto/back.svg"
+    } else {
+        "back.svg"
+    }
+}
 
 /// Image source for a path below `assets/cards/`.
 pub fn image(path: &str) -> egui::ImageSource<'static> {
