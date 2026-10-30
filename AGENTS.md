@@ -113,6 +113,7 @@ cargo run --locked -p notices                 # regenerate THIRD-PARTY-NOTICES
 cargo run --locked --release -p skat-analysis --example bench  # analysis latency
 cargo run --locked --release -p skat-ai --example latency       # AI latency per level
 cargo run --locked --release -p skat-ai --example calibrate -- validation medium strong 200 10 0
+cargo run --locked -p gui-egui --example screenshots -- DIR  # headless PNGs (D-45)
 ```
 
 On Linux the window needs EGL/GL and Wayland or X11 client libraries

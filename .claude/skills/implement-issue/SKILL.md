@@ -38,6 +38,25 @@ Run `scripts/check.sh` (the full gate, see `docs/testing.md`) plus
 failing checks, and never bypass the git hooks or weaken a check or test
 to get green.
 
+## 3a. Screenshots (frontend changes)
+
+If the change affects what the frontend shows (`crates/gui-egui/`,
+`assets/`), show it in screenshots (D-45):
+
+- Add or adjust a scenario in `crates/gui-egui/examples/screenshots.rs`
+  that reaches the changed state, so the picture says something about the
+  change; reuse an existing one only if it already shows it.
+- Render: `cargo run --locked -p gui-egui --example screenshots -- <dir>
+  <scenario>...` (headless; needs a wgpu adapter, e.g. lavapipe
+  `mesa-vulkan-drivers`).
+- Look at every PNG (Read) and check it against the issue's intent before
+  claiming the behaviour is checked.
+- Local session: render into a scratch directory and show the images to
+  the user. When the PR is opened, commit them to the orphan branch
+  `screenshots` under `issue-<n>/` and embed them in the PR body via
+  `https://raw.githubusercontent.com/<owner>/<repo>/screenshots/issue-<n>/<name>.png`.
+- If the caller says where to put them instead (CI does), do that.
+
 ## 4. Assess the checklist honestly
 
 For each checklist item decide **done** or **not done**. An item is done

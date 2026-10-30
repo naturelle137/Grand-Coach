@@ -85,6 +85,14 @@ cargo run --locked --release -p skat-ai --example calibrate -- validation medium
 cargo run --locked --release -p skat-ai --example latency
 ```
 
+Screenshots of the frontend are rendered headlessly into a directory
+(needs a wgpu adapter, e.g. `mesa-vulkan-drivers`; see
+[docs/testing.md](docs/testing.md#screenshots-of-the-frontend)):
+
+```sh
+cargo run --locked -p gui-egui --example screenshots -- screenshots
+```
+
 New Rust
 dependencies must have an [allowed licence](#allowed-third-party-licences)
 and be listed in [docs/third-party.md](docs/third-party.md).

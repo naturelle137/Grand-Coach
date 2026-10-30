@@ -88,9 +88,29 @@ actionlint from its [releases](https://github.com/rhysd/actionlint/releases).
 | Calibration | AI-vs-AI strength ordering and decision latency per level ([ai.md](ai.md)) | `skat-ai/examples/calibrate.rs`, `skat-ai/examples/latency.rs` | manual |
 | System | whole games end to end: 10,000 seeded random games against an independent rule model; complete seeded 36-game series with a random human, information boundary of the human's view, opponent self-play | `skat-core/tests/random_games.rs`, `skat-app/tests/`, `skat-app/src/tests.rs`, `skat-ai` | test (10k), deep (1M) |
 | GUI | the egui frontend driven headlessly by clicks (`egui_kittest`): series by clicks, every decision and game variant clicked at least once, table elements shown, language and card-face switch, translated errors, every card face renders; translation completeness; committed card SVGs match `tools/cardgen`; `THIRD-PARTY-NOTICES` lists every crate in `Cargo.lock` | `gui-egui/tests/gui.rs`, `gui-egui/src/i18n.rs`, `tools/cardgen/tests/`, `tools/notices/tests/` | test |
+| Screenshots | named scenarios of the real frontend rendered headlessly to PNG (`egui_kittest` with wgpu, lavapipe or WARP); frontend PRs show them, CI keeps them as artifacts (D-45) | `gui-egui/examples/screenshots.rs`, CI job `screenshots`, `implement-issue.yml` | on frontend changes |
 | Manual smoke run | launch the window on each platform and play (see `CONTRIBUTING.md`) | – | per milestone |
 
 New crates follow the same pattern.
+
+## Screenshots of the frontend
+
+`cargo run --locked -p gui-egui --example screenshots -- OUT_DIR
+[SCENARIO...]` renders named scenarios (bidding, trick, complete trick,
+result, …) to `OUT_DIR/<name>.png` without a display (D-45). It needs a
+wgpu adapter and prefers software ones: lavapipe on Linux (Fedora/Ubuntu
+`mesa-vulkan-drivers`), WARP on Windows.
+
+- CI job `screenshots` (Linux and Windows) runs all scenarios when
+  `crates/gui-egui/` or `assets/` changed and keeps the PNGs as run
+  artifacts `screenshots-Linux` and `screenshots-Windows`. It is
+  informational, not part of `ci-ok`.
+- `implement-issue.yml` embeds screenshots in the PR body of every
+  frontend change: the agent's own (skill step "Screenshots"), otherwise
+  all built-in scenarios. They live on the orphan branch `screenshots`
+  under `issue-<n>/`.
+- They support the human validation of a frontend change; they do not
+  replace looking at the change in a real window.
 
 ## Platform verification (M2)
 
