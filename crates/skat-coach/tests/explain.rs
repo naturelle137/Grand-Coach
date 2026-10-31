@@ -8,12 +8,17 @@
 //! Notation: suit `C` Kreuz, `S` Pik, `H` Herz, `D` Karo; rank
 //! `7 8 9 T J Q K A`.
 
+use skat_analysis::lesson::{
+    Applicability, Condition, EvidenceClass, FactKind, Lesson, LessonId, LessonKind, Support,
+    gather,
+};
 use skat_analysis::sampling::Place;
 use skat_analysis::{Analysis, Budget, Cancel, CardClass, Observation, Status, analyze, utility};
 use skat_coach::{
     Amount, BAD_MOMENTS, Consideration, Decision, Explanation, GOOD_MOMENTS, Judgement,
-    MOMENT_POINTS, Moment, MomentKind, Note, Objective, PRIMARY_MOMENTS, Reason, Role, Situation,
-    Stage, Verdict, WEAK_POINTS, decision_seed, explain, hints, moments, review,
+    MOMENT_POINTS, Moment, MomentKind, Note, Objective, PRIMARY_MOMENTS, Reason, Reliability, Role,
+    Situation, Stage, Teaching, Verdict, WEAK_POINTS, decision_seed, explain, hints, moments,
+    review, teach,
 };
 use skat_core::{
     Action, Announcement, Card, CardSet, Deal, Follow, Game, GameType, PlayerView, Rank,
@@ -222,6 +227,20 @@ fn assert_traceable(view: &PlayerView, a: &Analysis, e: &Explanation) {
             assert_eq!(w.chosen.judgement, Judgement::Weak);
         }
     }
+    assert_eq!(e.evidence, gather(view, a), "evidence from the analysis");
+    let compared: Vec<Action> = e.comparisons.iter().map(|c| c.chosen).collect();
+    assert_eq!(compared, view.legal_actions);
+    for c in &e.comparisons {
+        assert_eq!(c.best, e.best().map(|o| o.action), "the coach's best");
+        let judgement = e.option(c.chosen).unwrap().judgement;
+        let expected = match judgement {
+            _ if e.status != Status::Complete => Reliability::Incomplete,
+            Judgement::Screened => Reliability::Screened,
+            Judgement::NotEvaluated => Reliability::NotEvaluated,
+            _ => Reliability::Reliable,
+        };
+        assert_eq!(c.reliability, expected, "{c:?}");
+    }
     assert_no_telling(view, e);
 }
 
@@ -277,6 +296,18 @@ fn assert_no_telling(view: &PlayerView, e: &Explanation) {
             Judgement::Screened | Judgement::NotEvaluated => Note::Uncertain,
         };
         assert_eq!(r.note(), expected);
+        assert_eq!(r.evidence, e.evidence);
+        assert_eq!(
+            Some(&r.comparison),
+            e.comparisons.iter().find(|c| c.chosen == action)
+        );
+        // The catalogue is empty: every review falls back.
+        assert_eq!(r.teaching, Teaching::Fallback);
+    }
+    for stage in [Stage::Considerations, Stage::Situation, Stage::Figures] {
+        let h = hints(e, stage);
+        assert_eq!(h.evidence, e.evidence);
+        assert_eq!(h.teaching, Teaching::Fallback);
     }
 }
 
@@ -802,4 +833,189 @@ fn same_inputs_same_explanation() {
     assert_eq!(seed, decision_seed(5, &view));
     assert_ne!(seed, decision_seed(6, &view));
     assert_eq!(coach(&view, SMALL, seed).1, coach(&view, SMALL, seed).1);
+}
+
+fn test_lesson(kind: LessonKind, permitted: &[EvidenceClass]) -> Lesson {
+    Lesson {
+        id: LessonId {
+            key: "test.void".into(),
+            version: 1,
+        },
+        kind,
+        support: Support::Supported,
+        applies: Applicability::default(),
+        permitted: permitted.to_vec(),
+        requires: vec![Condition::Fact(FactKind::Void)],
+        excludes: Vec::new(),
+    }
+}
+
+/// A fact lesson on proven voids, and a mechanism resting on them.
+fn test_lessons() -> [Lesson; 2] {
+    [
+        test_lesson(LessonKind::Fact, &[EvidenceClass::Exact]),
+        test_lesson(
+            LessonKind::Mechanism,
+            &[
+                EvidenceClass::Exact,
+                EvidenceClass::Comparison,
+                EvidenceClass::Mechanism,
+            ],
+        ),
+    ]
+}
+
+/// VH (Grand Hand) to lead trick 2 after CJ, SA, HQ: both defenders are
+/// proven void in Trumpf.
+fn after_voids() -> PlayerView {
+    let mut g = game(standard_deal(), false);
+    hand_game(&mut g, Announcement::plain(GameType::Grand));
+    run(&mut g, &["CJ", "SA", "HQ"].map(|s| Action::Play(c(s))));
+    current_view(&g)
+}
+
+#[test]
+fn unreliable_comparisons_back_no_mechanism() {
+    let [fact, mechanism] = test_lessons();
+    let mechanism_only = [mechanism.clone()];
+    let view = after_voids();
+    // Complete: the mechanism may back the review of every option.
+    let (_, e) = coach(&view, SMALL, 3);
+    assert!(e.complete());
+    let r = review(&e, view.legal_actions[0]).unwrap();
+    assert_eq!(r.comparison.reliability, Reliability::Reliable);
+    assert!(matches!(
+        teach(&mechanism_only, &r.evidence, Some(&r.comparison)),
+        Teaching::Lesson { id, .. } if id == mechanism.id
+    ));
+    // Cancelled and out of budget: the exact fact lesson still holds, the
+    // mechanism falls back.
+    let cancel = Cancel::new();
+    cancel.cancel();
+    let tiny = Budget {
+        samples: 4,
+        nodes_per_task: 10,
+    };
+    let analyses = [
+        analyze(&view, SMALL, 3, Some(&cancel)).unwrap(),
+        analyze(&view, tiny, 3, None).unwrap(),
+    ];
+    for a in &analyses {
+        assert_ne!(a.status, Status::Complete);
+        let e = explain(&view, a).unwrap();
+        assert_traceable(&view, a, &e);
+        for &action in &view.legal_actions {
+            let r = review(&e, action).unwrap();
+            assert_eq!(r.comparison.reliability, Reliability::Incomplete);
+            assert_eq!(
+                teach(&mechanism_only, &r.evidence, Some(&r.comparison)),
+                Teaching::Fallback
+            );
+            assert!(matches!(
+                teach(std::slice::from_ref(&fact), &r.evidence, Some(&r.comparison)),
+                Teaching::Lesson { id, .. } if id == fact.id
+            ));
+        }
+    }
+    // Absent evidence: before the first card nobody is proven void.
+    let mut g = game(standard_deal(), false);
+    hand_game(&mut g, Announcement::plain(GameType::Grand));
+    let view = current_view(&g);
+    let (_, e) = coach(&view, SMALL, 3);
+    let r = review(&e, view.legal_actions[0]).unwrap();
+    assert_eq!(
+        teach(&test_lessons(), &r.evidence, Some(&r.comparison)),
+        Teaching::Fallback
+    );
+}
+
+#[test]
+fn screened_discards_back_no_mechanism() {
+    let low = deal(
+        "C7 C8 C9 S7 S8 S9 H7 H8 H9 D7",
+        "CJ SJ HJ DJ CA CT CK CQ SA ST",
+        "SK SQ HA HT HK HQ DA DT DK DQ",
+        "D8 D9",
+    );
+    let mut g = game(low, false);
+    run(&mut g, &VH_AT_18);
+    run(&mut g, &[Action::TakeSkat]);
+    let view = current_view(&g);
+    let budget = Budget {
+        samples: 5,
+        ..SMALL
+    };
+    let (_, e) = coach(&view, budget, 3);
+    let screened = e
+        .options
+        .iter()
+        .find(|o| o.judgement == Judgement::Screened)
+        .unwrap();
+    let r = review(&e, screened.action).unwrap();
+    assert_eq!(r.comparison.reliability, Reliability::Screened);
+    // Even a mechanism without conditions does not apply.
+    let unconditional = Lesson {
+        requires: Vec::new(),
+        ..test_lessons()[1].clone()
+    };
+    assert_eq!(
+        teach(
+            std::slice::from_ref(&unconditional),
+            &r.evidence,
+            Some(&r.comparison)
+        ),
+        Teaching::Fallback
+    );
+    let best = review(&e, e.best().unwrap().action).unwrap();
+    assert!(matches!(
+        teach(&[unconditional], &best.evidence, Some(&best.comparison)),
+        Teaching::Lesson { .. }
+    ));
+}
+
+#[test]
+fn hints_name_no_preferred_action_or_plan() {
+    // The same decision with opposite option rankings: everything shown
+    // before the move except the figures is the same; no mechanism lesson
+    // is selected before the move.
+    let view = after_voids();
+    let analysis = analyze(&view, SMALL, 3, None).unwrap();
+    let ranked = |rising: bool| {
+        let mut a = analysis.clone();
+        let n = a.options.len();
+        for (i, o) in a.options.iter_mut().enumerate() {
+            let e = o.estimate.as_mut().unwrap();
+            e.expected_score = 20.0 * if rising { i } else { n - 1 - i } as f64;
+        }
+        a
+    };
+    let (a, reversed) = (ranked(true), ranked(false));
+    let x = explain(&view, &a).unwrap();
+    let y = explain(&view, &reversed).unwrap();
+    assert_ne!(
+        x.best().map(|o| o.action),
+        y.best().map(|o| o.action),
+        "precondition: another best option"
+    );
+    let [fact, mechanism] = test_lessons();
+    for stage in [Stage::Considerations, Stage::Situation] {
+        let (hx, hy) = (hints(&x, stage), hints(&y, stage));
+        assert_eq!(hx.evidence, hy.evidence);
+        assert_eq!(hx.teaching, hy.teaching);
+        assert_eq!(hx.considerations, hy.considerations);
+        assert_eq!(
+            hx.situation.as_ref().map(|s| &s.options),
+            hy.situation.as_ref().map(|s| &s.options)
+        );
+    }
+    for e in [&x, &y] {
+        assert_eq!(
+            teach(std::slice::from_ref(&mechanism), &e.evidence, None),
+            Teaching::Fallback
+        );
+        assert_eq!(
+            teach(&[mechanism.clone(), fact.clone()], &e.evidence, None),
+            teach(std::slice::from_ref(&fact), &e.evidence, None),
+        );
+    }
 }

@@ -23,6 +23,15 @@ labels; it computes no strategy, counts no cards and models no opponent.
 | Reasons | differences between two estimates | estimate |
 | Assumptions, basis | `assumptions`, `effort` | model |
 
+Lessons (D-53): `Explanation::evidence` is the analysis `Evidence` with
+provenance, `Explanation::comparisons` each option's `Comparison` with the
+best ([analysis.md](analysis.md#evidence-for-lessons)). `teach` picks the
+first lesson of the catalogue whose `Lesson::check` applies, otherwise
+`Teaching::Fallback`: only the model comparison, no strategic reason.
+`Hints` carry the evidence and at most a fact lesson, since mechanisms
+need the move; `MoveReview` carries evidence, comparison and teaching.
+The catalogue is still empty, so every teaching is the fallback.
+
 Win chances are those of the deciding seat's party; the coach labels the
 party (own side, declarer, defenders). Points are Seeger-Fabian list
 points and, for defenders, the declarer's game points; Augen are never

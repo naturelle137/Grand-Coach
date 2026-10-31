@@ -17,7 +17,8 @@ A planned didactic follow-up to the implemented coach is specified in
 [#39](https://github.com/naturelle137/grand-coach/issues/39). Readable review
 comes first, verified lessons next, practice/progress afterwards. The work
 refines M5–M8 and does not close their existing acceptance gates. Package A
-(#41, D-52: compact debriefing, figures off by default) is implemented.
+(#41, D-52: compact debriefing, figures off by default) and package B (#42,
+D-53: evidence contract, empty lesson catalogue) are implemented.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.

@@ -30,6 +30,37 @@ in the code (`crates/skat-analysis`).
   ranks by: own expected Seeger-Fabian points, for a defender minus half
   the declarer's expected game points.
 
+## Evidence for lessons
+
+`lesson` (D-53) is the contract between the analysis and coach lessons.
+It reuses one `Analysis`; it runs no search of its own.
+
+- `gather(view, analysis)` returns `Evidence`: a decision `Snapshot`
+  (seat, phase, role, game, bidding calls, tricks, own cards, own Skat,
+  an Ouvert declarer's cards seen by a defender) and items, each with its
+  class and sources. Observations are `Exact`; inferences are `Sample`,
+  whose minimum and maximum are extremes of the evaluated distributions,
+  not bounds, and whose positive mean proves no card. Sources point into
+  the view: own hand, own Skat, Ouvert cards, the played cards, the trick
+  card that proved a void, the bidding call that showed a value, the
+  bidding history and rules, or the model for samples. `Evidence` names
+  no action and depends only on view, seed and budget; exact items stay
+  valid when the search stopped early.
+- `compare(view, analysis, chosen)` returns a `Comparison` of the chosen
+  option with the best one by `utility` (evaluated on the most
+  distributions, ties: first legal). It is `Reliable` only for a complete
+  analysis with the chosen option evaluated on every distribution;
+  otherwise `Incomplete`, `Screened` or `NotEvaluated`.
+- A `Lesson` has a stable key and version, applicability (phases, roles,
+  game kinds), permitted evidence classes, required and excluding
+  conditions and a support status. `Lesson::check` cites the matching
+  items or says what is unmet. Conditions on facts match only `Exact`
+  items. A `Fact` lesson may not cite comparisons and holds with an
+  incomplete search; a `Mechanism` needs a comparison (after the move)
+  that is reliable. Unsupported lessons never apply.
+- `catalogue()` is empty until lessons are backed by independent fixtures
+  (#43, #44).
+
 ## Knowledge (card counter)
 
 Exact facts from the view (`Knowledge`): own cards, played cards, Augen

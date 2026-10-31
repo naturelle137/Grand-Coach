@@ -12,7 +12,8 @@
 //!   those distributions, double-dummy card play ([`double_dummy`]) and a
 //!   shared continuation policy ([`policy`]), within a deterministic
 //!   [`Budget`],
-//! - simple hand measures ([`hand`]).
+//! - simple hand measures ([`hand`]),
+//! - the evidence contract for coach lessons ([`lesson`]).
 //!
 //! Semantics, budgets and measured latency: `docs/analysis.md`.
 
@@ -22,6 +23,7 @@ pub mod double_dummy;
 pub mod evidence;
 pub mod hand;
 mod knowledge;
+pub mod lesson;
 pub mod policy;
 pub mod sampling;
 mod trick;

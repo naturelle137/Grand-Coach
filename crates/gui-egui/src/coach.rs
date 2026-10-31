@@ -963,6 +963,11 @@ mod tests {
 
     /// The decision with `chosen` played.
     fn fixture(chosen: ComparedOption) -> model::MoveReview {
+        let comparison = model::Comparison {
+            chosen: chosen.action,
+            best: Some(Action::Play(BEST)),
+            reliability: model::Reliability::Reliable,
+        };
         model::MoveReview {
             decision: Decision::Card,
             role: Role::Defender,
@@ -996,6 +1001,25 @@ mod tests {
                 effective_samples: 20.0,
             },
             assumptions: vec![Assumption::UniformHiddenCards, Assumption::DoubleDummyPlay],
+            evidence: model::Evidence {
+                version: 1,
+                snapshot: model::Snapshot {
+                    seat: Seat::Hinterhand,
+                    phase: Phase::Spiel,
+                    role: Role::Defender,
+                    game: None,
+                    bids: 3,
+                    tricks: 4,
+                    trick_cards: 1,
+                    own: Default::default(),
+                    own_skat: None,
+                    revealed: None,
+                },
+                status: model::Status::Complete,
+                items: Vec::new(),
+            },
+            comparison,
+            teaching: model::Teaching::Fallback,
         }
     }
 
