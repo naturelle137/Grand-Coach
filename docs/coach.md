@@ -31,7 +31,47 @@ first lesson of the catalogue whose `Lesson::check` applies, otherwise
 `Teaching::Fallback`: only the model comparison, no strategic reason.
 `Hints` carry the evidence and at most a fact lesson, since mechanisms
 need the move; `MoveReview` carries evidence, comparison and teaching.
-The catalogue is still empty, so every teaching is the fallback.
+The catalogue holds the two exact lessons below; elsewhere the teaching
+is the fallback.
+
+## Exact lessons (D-55)
+
+Two fact lessons (`LessonKind::Fact`, version 1, supported) on exact card
+knowledge during card play, for every role. They cite only exact items
+(`EvidenceClass::Exact`), run no search and hold with an incomplete or
+cancelled analysis. `teach` takes the first that applies; a lesson needs
+a fact that rests on a card of the trick in progress or the last
+completed trick (`Condition::Recent`), so older facts are not repeated.
+`skat_coach::lesson_content` turns the cited items into plain data
+(`LessonContent`); missing or mismatching evidence gives no lesson.
+
+| Key | Games | Applies when | Evidence shown after the move |
+|-----|-------|--------------|-------------------------------|
+| `proven-void` | Farbspiel, Grand, Null | another seat did not follow the led class (Trumpf or a side suit) | trick, seat, led card and card played; that seat holds no card of the class (follow-suit rule, ISkO) |
+| `remaining-trumpf` | Farbspiel, Grand | a Trumpf was played | Trumpf of the game (Grand: the four Buben), own, played, in the own discarded Skat, revealed Ouvert cards and unseen, with the cards |
+
+Before the move the hints show only the attention question (section
+"Worauf achten?"), which names no option and gives no answer (D-49).
+After the move the note on the last move shows the evidence, the
+exception and a transfer question, in German and English.
+
+What they do not claim:
+
+- A proven void excludes cards only. It does not say whether the seat
+  will trump or discard, who wins a later trick, or that a partner can
+  win; in Null there is no Trumpf and a void seat discards.
+- Unseen Trumpf are not assigned to a seat: they lie in a concealed hand
+  or, with an unknown Skat, in the Skat. A Trumpf in the own discarded
+  Skat is no opponent's Trumpf.
+- No lesson says which card to play.
+
+Limitations: Null has no Trumpf lesson. "Recent" is the trick in progress
+or the last completed trick, not exactly "since the seat's last card".
+The debriefing moments do not show lessons yet. The Trumpf sets do not
+appear as a separate fact line in the considerations; `TrumpsOut` still
+does. The fixtures are in `skat-analysis/tests/exact_lessons.rs` and
+`skat-coach/tests/lessons.rs`; learner UAT is pending
+([coach-validation.md](coach-validation.md)).
 
 Win chances are those of the deciding seat's party; the coach labels the
 party (own side, declarer, defenders). Points are Seeger-Fabian list

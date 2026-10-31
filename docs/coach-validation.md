@@ -2,8 +2,8 @@
 
 Status: protocol prepared for M5 (issue
 [#51](https://github.com/naturelle137/grand-coach/issues/51), D-54),
-2026-10-31. No lesson is shipped yet (`catalogue()` is empty, D-53); no
-learner session has been run. M8 execution: issue
+2026-10-31. Shipped lessons: `proven-void` and `remaining-trumpf` (#43,
+D-55); no learner session has been run. M8 execution: issue
 [#54](https://github.com/naturelle137/grand-coach/issues/54). Concept:
 [coach-didactics.md](coach-didactics.md); contract:
 [analysis.md](analysis.md#evidence-for-lessons).

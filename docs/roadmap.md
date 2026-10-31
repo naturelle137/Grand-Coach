@@ -18,9 +18,11 @@ A planned didactic follow-up to the implemented coach is specified in
 comes first, verified lessons next, practice/progress afterwards. The work
 refines M5–M8 and does not close their existing acceptance gates. Package A
 (#41, D-52: compact debriefing, figures off by default) and package B (#42,
-D-53: evidence contract, empty lesson catalogue) are implemented. Package K
+D-53: evidence contract) are implemented. Package K
 (#51, D-54) prepared the evidence checklist and learner UAT protocol in
-[coach-validation.md](coach-validation.md); no learner UAT has been run yet.
+[coach-validation.md](coach-validation.md). Package C (#43, D-55) ships the
+first two exact lessons, remaining Trumpf and proven voids
+([coach.md](coach.md#exact-lessons-d-55)); no learner UAT has been run yet.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
