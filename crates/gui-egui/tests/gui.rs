@@ -1084,3 +1084,50 @@ fn warning_before_a_weak_card_by_clicks() {
     }
     panic!("no weak card found");
 }
+
+/// The window stays responsive while the coach analyses with the full
+/// interactive budget (the analysis runs on a background thread): frames
+/// keep returning quickly, the status says the coach is analysing, and
+/// the player can act; acting cancels the analysis of the old decision.
+#[test]
+fn window_stays_responsive_while_the_coach_analyses() {
+    let config = SessionConfig {
+        seed: 3,
+        series: SeriesLength::Fixed(36),
+        kontra_re: false,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        warnings: false,
+        show_figures: true,
+    });
+    settle(&mut harness);
+    let before = view(&harness);
+    assert_eq!(before.phase, Phase::Reizen);
+    assert_eq!(before.acting, Some(PlayerId::HUMAN));
+    // An opening bidding analysis with `Budget::INTERACTIVE` takes about a
+    // second or more (`docs/analysis.md`); ten frames take milliseconds.
+    let mut slowest = std::time::Duration::ZERO;
+    for _ in 0..10 {
+        let start = std::time::Instant::now();
+        harness.run_steps(1);
+        slowest = slowest.max(start.elapsed());
+    }
+    assert!(view(&harness).coach.analysing, "still analysing");
+    assert!(
+        harness
+            .query_all_by_label_contains("Der Coach rechnet")
+            .count()
+            > 0
+    );
+    assert!(
+        slowest < std::time::Duration::from_millis(500),
+        "a frame took {slowest:?} while the coach analysed"
+    );
+    // Acting during the analysis: the game moves on at once.
+    let action = before.legal_actions[0];
+    perform(&mut harness, &before, action);
+    assert_ne!(game_part(&view(&harness)), game_part(&before));
+}

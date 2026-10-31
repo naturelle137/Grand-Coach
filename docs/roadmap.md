@@ -6,8 +6,10 @@ interactive smoke test of the levels is still open. The interactive smoke
 test on Windows 11 is still open (D-36,
 [testing.md](testing.md#platform-verification-m2)). M5 in progress
 (issue #10, [coach.md](coach.md), D-48): `skat-coach`, coach levels, warning and
-the egui coach panel are implemented; interactive smoke tests and a latency
-record in the playable application are still open.
+the egui coach panel are implemented; the coach latency is recorded on a CI
+runner and window responsiveness is tested headlessly
+([coach.md](coach.md#latency)); interactive smoke tests in the playable
+application are still open.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.

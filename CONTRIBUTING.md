@@ -85,6 +85,13 @@ cargo run --locked --release -p skat-ai --example calibrate -- validation medium
 cargo run --locked --release -p skat-ai --example latency
 ```
 
+The coach latency per human decision is measured by hand through
+`skat-app` (see [docs/coach.md](docs/coach.md#latency)):
+
+```sh
+cargo run --locked --release -p skat-app --example coach_latency
+```
+
 Screenshots of the frontend are rendered headlessly into a directory
 (needs a wgpu adapter, e.g. `mesa-vulkan-drivers`; see
 [docs/testing.md](docs/testing.md#screenshots-of-the-frontend)):
