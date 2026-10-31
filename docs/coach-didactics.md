@@ -239,11 +239,15 @@ expected results. Agreement with the same solver, another AI or a learner
 is not independent strategic certification. Narrow or omit unsupported
 claims; correctness and information-boundary gates remain binding.
 
-[#51](https://github.com/naturelle137/grand-coach/issues/51) prepares the M5
+[#51](https://github.com/naturelle137/grand-coach/issues/51) prepared the M5
 evidence checklist, UAT scripts and initial/delayed evaluation protocol
-after #42 and before #43. Later M5 PRs apply it, with combined learner UAT
+after #42 and before #43: [coach-validation.md](coach-validation.md)
+(D-54). Later M5 PRs apply it, with combined learner UAT
 after #47 and before declaring #10 complete. Protocol delivery can close
 Issue #51 without waiting for these later features or human results.
+This supersedes any earlier expert-review or expert sign-off step in the
+original concept and plan, and the earlier combined #51 placement that
+also covered the M8 evaluation (now #54).
 
 [#54](https://github.com/naturelle137/grand-coach/issues/54) executes the M8
 learner evaluation after #50, including new unaided tasks and a later
