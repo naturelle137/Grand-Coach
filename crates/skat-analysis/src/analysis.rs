@@ -34,7 +34,7 @@ use skat_core::{
 use crate::budget::{Budget, Cancel, Interrupted, Meter};
 use crate::double_dummy::{DdValue, Position, Solver, Stakes};
 use crate::evidence;
-use crate::knowledge::Knowledge;
+use crate::knowledge::{Knowledge, TrumpfSets};
 use crate::policy;
 use crate::sampling::{Diagnostic, HiddenCards, Place, World};
 
@@ -128,6 +128,10 @@ pub enum Observation {
         /// Number of such trumps.
         count: u8,
     },
+    /// Where the Trumpf are as far as the deciding seat knows: own, played,
+    /// own Skat, revealed Ouvert cards and unseen, kept apart. Farbspiel
+    /// and Grand only. [`Observation::TrumpsOut`] keeps its meaning.
+    TrumpfSets(TrumpfSets),
     /// Augen won in completed tricks (without the Skat).
     AugenWon {
         /// The declarer.
@@ -1009,6 +1013,9 @@ fn observations(view: &PlayerView) -> Vec<Observation> {
             out.push(Observation::TrumpsOut {
                 count: k.trumps_out().len() as u8,
             });
+        }
+        if let Some(sets) = k.trumpf_sets() {
+            out.push(Observation::TrumpfSets(sets));
         }
     }
     if let Some((declarer, defenders)) = k.party_augen() {

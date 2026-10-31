@@ -10,15 +10,15 @@
 
 use skat_analysis::lesson::{
     Applicability, Condition, EvidenceClass, FactKind, Lesson, LessonId, LessonKind, Support,
-    gather,
+    catalogue, gather,
 };
 use skat_analysis::sampling::Place;
 use skat_analysis::{Analysis, Budget, Cancel, CardClass, Observation, Status, analyze, utility};
 use skat_coach::{
     Amount, BAD_MOMENTS, Consideration, Decision, Explanation, GOOD_MOMENTS, Judgement,
     MOMENT_POINTS, Moment, MomentKind, Note, Objective, PRIMARY_MOMENTS, Reason, Reliability, Role,
-    Situation, Stage, Teaching, Verdict, WEAK_POINTS, decision_seed, explain, hints, moments,
-    review, teach,
+    Situation, Stage, Teaching, Verdict, WEAK_POINTS, decision_seed, explain, hints,
+    lesson_content, moments, review, teach,
 };
 use skat_core::{
     Action, Announcement, Card, CardSet, Deal, Follow, Game, GameType, PlayerView, Rank,
@@ -301,14 +301,24 @@ fn assert_no_telling(view: &PlayerView, e: &Explanation) {
             Some(&r.comparison),
             e.comparisons.iter().find(|c| c.chosen == action)
         );
-        // The catalogue is empty: every review falls back.
-        assert_eq!(r.teaching, Teaching::Fallback);
+        // Catalogue lessons are fact lessons on the evidence alone: the
+        // same whichever action is chosen, and the same as before the move
+        // (D-49: the lesson shown before the move implies no action).
+        assert_eq!(r.teaching, teach(&catalogue(), &e.evidence, None));
+        assert_eq!(r.lesson, lesson_content(&r.teaching, &r.evidence));
     }
     for stage in [Stage::Considerations, Stage::Situation, Stage::Figures] {
         let h = hints(e, stage);
         assert_eq!(h.evidence, e.evidence);
-        assert_eq!(h.teaching, Teaching::Fallback);
+        assert_eq!(h.teaching, teach(&catalogue(), &e.evidence, None));
+        assert_eq!(h.lesson, lesson_content(&h.teaching, &h.evidence));
     }
+    // The Trumpf sets are shown by their lesson only, not as a fact line.
+    assert!(
+        !known(e)
+            .iter()
+            .any(|o| matches!(o, Observation::TrumpfSets(_)))
+    );
 }
 
 #[test]

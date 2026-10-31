@@ -280,6 +280,49 @@ coach-fact-augen-out = Noch { $augen } Augen bei den anderen oder im Skat.
 coach-fact-skat-known = Im Skat liegen: { $cards }.
 coach-fact-bid-shown = { $player } hat bis { $value } gereizt.
 coach-fact-kontra-eligible = { $player } darf noch Kontra sagen.
+coach-fact-trumpf-unseen = { $count } Trumpf hast du noch nicht gesehen.
+coach-section-lesson = Worauf achten?
+coach-section-lesson-review = Was sicher feststeht
+coach-lesson-class-trumpf = Trumpf
+coach-lesson-remaining-trumpf-question = Zähl nach: Welche Trumpf hast du noch nicht gesehen – und wo können sie liegen?
+coach-lesson-remaining-trumpf-total = { $kind ->
+        [grand] Im Grand sind nur die { $count } Buben Trumpf.
+       *[suit] Im { $game }-Spiel gibt es { $count } Trumpf: die 4 Buben und die 7 { $game }-Karten.
+    }
+coach-lesson-remaining-trumpf-own = In deiner Hand: { $count ->
+        [0] keiner.
+       *[other] { $count } ({ $cards }).
+    }
+coach-lesson-remaining-trumpf-played = Schon gespielt: { $count ->
+        [0] keiner.
+       *[other] { $count } ({ $cards }).
+    }
+coach-lesson-remaining-trumpf-skat = In deinem gedrückten Skat: { $count } ({ $cards }). Die hält niemand auf der Hand.
+coach-lesson-remaining-trumpf-revealed = Offen beim Alleinspieler: { $count } ({ $cards }).
+coach-lesson-remaining-trumpf-unseen = Nicht gesehen: { $count ->
+        [0] keiner. Verdeckt liegt kein Trumpf mehr.
+       *[other] { $count } ({ $cards }), in einer verdeckten Hand{ $skat ->
+            [unknown] {""} oder im Skat.
+           *[known] . Den Skat kennst du.
+        }
+    }
+coach-lesson-remaining-trumpf-exception = { $skat ->
+        [unknown] Achtung: Wer die nicht gesehenen Trumpf hat, steht damit nicht fest. Sie können auf die verdeckten Hände verteilt sein oder im Skat liegen.
+       *[known] Achtung: Trumpf im eigenen Skat sind keine Trumpf der Gegner. Wie sich die nicht gesehenen auf die verdeckten Hände verteilen, steht damit nicht fest.
+    }
+coach-lesson-remaining-trumpf-exception-none = Achtung: Das sagt nur etwas über Trumpf, nicht über die Fehlfarben.
+coach-lesson-remaining-trumpf-transfer = Beim nächsten Trumpfstich: Wie viele Trumpf sind danach noch nicht gesehen?
+coach-lesson-proven-void-question = Hat gerade jemand nicht bedient? Was weißt du dadurch sicher über seine Karten?
+coach-lesson-proven-void-evidence = Stich { $trick }: { $player } hat { $card } auf { $led } gespielt, also nicht { $class } bedient. Wer bedienen kann, muss bedienen (ISkO) – { $player } hat { $follow ->
+        [trumpf] keinen Trumpf
+       *[suit] kein { $class }
+    } mehr.
+coach-lesson-proven-void-exception = { $case ->
+        [trumpf] Das schließt nur Trumpf aus. Wer einen späteren Stich gewinnt, folgt daraus nicht.
+        [null] Im Null gibt es keinen Trumpf: Wer frei ist, wirft ab. Wer einen späteren Stich nimmt, folgt daraus nicht.
+       *[suit] Das schließt nur { $class } aus. Wer frei ist, darf stechen oder abwerfen – ob er das tut und wer den Stich gewinnt, folgt daraus nicht.
+    }
+coach-lesson-proven-void-transfer = Wenn wieder { $class } gespielt wird: Wer kann dann noch bedienen?
 coach-holder-skat = Der Skat
 coach-class-trumps = Trümpfe
 coach-class-jacks = Buben

@@ -17,7 +17,7 @@ use eframe::egui::{Key, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use gui_egui::{GrandCoachApp, Language};
-use skat_app::coach_model::Judgement;
+use skat_app::coach_model::{Judgement, LessonContent};
 use skat_app::{
     Action, Advice, Budget, Card, CoachLevel, CoachSettings, Debriefing, Level, Opponents, Pending,
     SeriesLength, SessionConfig, TableView,
@@ -45,6 +45,10 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("coach-figures", coach_figures),
     ("coach-no-figures", coach_no_figures),
     ("coach-note", coach_note),
+    ("coach-lesson", coach_lesson),
+    ("coach-lesson-review", coach_lesson_review),
+    ("coach-lesson-review-en", coach_lesson_review_en),
+    ("coach-lesson-trumpf", coach_lesson_trumpf),
     ("coach-debriefing", coach_debriefing),
     ("coach-debriefing-details", coach_debriefing_details),
     ("coach-debriefing-en", coach_debriefing_en),
@@ -168,6 +172,73 @@ fn coach_note(harness: &mut Harness<'_, GrandCoachApp>) {
             .as_ref()
             .is_some_and(|m| m.note.is_some())
     });
+}
+
+/// The first card decision whose hints carry a lesson (#43): the attention
+/// question above the facts, no answer yet.
+fn coach_lesson(harness: &mut Harness<'_, GrandCoachApp>) {
+    for _ in 0..10 {
+        play_until(harness, |view, _| {
+            view.legal_actions.len() >= 2
+                && matches!(view.legal_actions[0], Action::Play(_))
+                && view.coach.next_stage == Some(skat_app::coach_model::Stage::Considerations)
+        });
+        click(harness, Role::Button, "Was soll ich bedenken?");
+        await_coach(harness, |view| {
+            matches!(view.coach.advice, Advice::Ready(_) | Advice::Provisional(_))
+        });
+        if let Advice::Ready(h) | Advice::Provisional(h) = &view(harness).coach.advice
+            && h.lesson.is_some()
+        {
+            return;
+        }
+        play_until(harness, |_, played| played);
+    }
+    panic!("no lesson in hints");
+}
+
+/// The note on the first own card that taught a lesson: evidence with the
+/// cards, exception and transfer question.
+fn coach_lesson_review(harness: &mut Harness<'_, GrandCoachApp>) {
+    review_with(harness, |_| true);
+}
+
+/// The note after a card that taught the remaining-Trumpf lesson.
+fn coach_lesson_trumpf(harness: &mut Harness<'_, GrandCoachApp>) {
+    review_with(harness, |l| {
+        matches!(l, LessonContent::RemainingTrumpf { .. })
+    });
+}
+
+/// Plays on until the note on an own card carries a lesson `wanted`.
+fn review_with(harness: &mut Harness<'_, GrandCoachApp>, wanted: impl Fn(&LessonContent) -> bool) {
+    for _ in 0..20 {
+        play_until(harness, |view, played| {
+            played && view.acting != Some(skat_app::PlayerId::HUMAN)
+        });
+        await_coach(harness, |view| {
+            view.coach
+                .last_move
+                .as_ref()
+                .is_some_and(|m| m.note.is_some())
+        });
+        if view(harness)
+            .coach
+            .last_move
+            .and_then(|m| m.lesson)
+            .is_some_and(|l| wanted(&l))
+        {
+            return;
+        }
+    }
+    panic!("no lesson after a move");
+}
+
+/// The same in English.
+fn coach_lesson_review_en(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_lesson_review(harness);
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(4);
 }
 
 /// The debriefing after the first game, coach at every move, figures off

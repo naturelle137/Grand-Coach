@@ -11,14 +11,17 @@ mod common;
 
 use common::*;
 use skat_analysis::lesson::{
-    Applicability, Check, Claim, Comparison, Condition, Evidence, EvidenceClass, FactKind,
-    GameKind, Item, Lesson, LessonId, LessonKind, Reliability, Role, Snapshot, Source, Support,
-    Unmet, catalogue, compare, gather,
+    Applicability, CONTRACT_VERSION, Check, Claim, Comparison, Condition, Evidence, EvidenceClass,
+    FactKind, GameKind, Item, Lesson, LessonId, LessonKind, Reliability, Role, Snapshot, Source,
+    Support, Unmet, compare, gather,
 };
 use skat_analysis::sampling::Place;
-use skat_analysis::{Budget, Cancel, CardClass, Inference, Observation, Status, analyze};
+use skat_analysis::{
+    Budget, Cancel, CardClass, Inference, Observation, Status, TrumpfSets, analyze,
+};
 use skat_core::{
-    Action, Announcement, Deal, Follow, Game, GameType, Phase, PlayerView, RuleConfig, Seat, Suit,
+    Action, Announcement, CardSet, Deal, Follow, Game, GameType, Phase, PlayerView, RuleConfig,
+    Seat, Suit,
 };
 
 /// Small and node-limited: the search may stop early, which must not change
@@ -164,6 +167,8 @@ fn void_item() -> Item {
         &[Source::Trick {
             index: 1,
             seat: Seat::Hinterhand,
+            led: c("HA"),
+            card: c("SA"),
         }],
     )
 }
@@ -214,6 +219,8 @@ fn exact_facts_carry_their_provenance() {
             &[Source::Trick {
                 index: 0,
                 seat: Seat::Mittelhand,
+                led: c("CJ"),
+                card: c("SA"),
             }],
         ),
         fact(
@@ -224,11 +231,36 @@ fn exact_facts_carry_their_provenance() {
             &[Source::Trick {
                 index: 0,
                 seat: Seat::Hinterhand,
+                led: c("CJ"),
+                card: c("HQ"),
             }],
         ),
         fact(
             Observation::TrumpsOut { count: 0 },
             &[Source::OwnHand, Source::Played],
+        ),
+        // The four Jacks: three own, CJ played (trick 0, VH), none unseen;
+        // Hand game, so the Skat is unknown.
+        fact(
+            Observation::TrumpfSets(TrumpfSets {
+                total: cards("CJ SJ HJ DJ"),
+                own: cards("SJ HJ DJ"),
+                played: cards("CJ"),
+                own_skat: CardSet::EMPTY,
+                revealed: CardSet::EMPTY,
+                unseen: CardSet::EMPTY,
+                skat_unknown: true,
+            }),
+            &[
+                Source::OwnHand,
+                Source::Played,
+                Source::Trick {
+                    index: 0,
+                    seat: Seat::Vorhand,
+                    led: c("CJ"),
+                    card: c("CJ"),
+                },
+            ],
         ),
         fact(
             Observation::AugenWon {
@@ -261,7 +293,7 @@ fn exact_facts_carry_their_provenance() {
     for item in &expected {
         assert!(got.contains(&item), "missing {item:?}");
     }
-    assert_eq!(e.version, 1);
+    assert_eq!(e.version, CONTRACT_VERSION);
     assert_eq!(
         e.snapshot,
         Snapshot {
@@ -590,11 +622,6 @@ fn assert_same_evidence(
     assert!(a.items.iter().any(|i| i.class() == EvidenceClass::Sample));
     assert_eq!(a, b);
     a
-}
-
-#[test]
-fn the_catalogue_is_empty_until_lessons_are_backed() {
-    assert!(catalogue().is_empty());
 }
 
 #[cfg(feature = "serde")]

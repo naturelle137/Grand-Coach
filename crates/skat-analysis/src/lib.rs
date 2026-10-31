@@ -33,5 +33,5 @@ pub use analysis::{
     analyze, analyze_forgetful, analyze_known, utility,
 };
 pub use budget::{Budget, Cancel, Interrupted, Meter};
-pub use knowledge::Knowledge;
+pub use knowledge::{Knowledge, TrumpfSets};
 pub use trick::TrickState;

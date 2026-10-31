@@ -107,6 +107,51 @@ impl Knowledge {
     pub fn augen_out(&self) -> u8 {
         (CardSet::ALL - self.own - self.played).augen()
     }
+
+    /// Where the Trumpf of the game are, as far as this seat knows; `None`
+    /// before the announcement and in Null. Unlike [`Knowledge::trumps_out`]
+    /// it keeps the own discarded Skat and revealed Ouvert cards apart from
+    /// the unseen ones.
+    pub fn trumpf_sets(&self) -> Option<TrumpfSets> {
+        let game = self.game.filter(|&g| g != GameType::Null)?;
+        let total = game.trumps();
+        let own_skat = total & self.skat.unwrap_or_default();
+        let revealed = total & (self.known_elsewhere - self.skat.unwrap_or_default());
+        Some(TrumpfSets {
+            total,
+            own: total & self.own,
+            played: total & self.played,
+            own_skat,
+            revealed,
+            unseen: total & self.unseen(),
+            skat_unknown: self.skat.is_none(),
+        })
+    }
+}
+
+/// The Trumpf of a Farbspiel or Grand split into disjoint sets by what one
+/// seat knows (exact; `docs/analysis.md`). `own`, `played`, `own_skat`,
+/// `revealed` and `unseen` partition `total`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TrumpfSets {
+    /// Every Trumpf of the game: 11 in a Farbspiel, the 4 Buben in Grand.
+    pub total: CardSet,
+    /// In the seat's hand.
+    pub own: CardSet,
+    /// Played, including the trick in progress.
+    pub played: CardSet,
+    /// In the seat's own discarded Skat (declarer after Drücken): known,
+    /// in nobody's hand.
+    pub own_skat: CardSet,
+    /// In the revealed hand of an Ouvert declarer, seen by a defender.
+    pub revealed: CardSet,
+    /// Not seen: in a concealed hand or, if `skat_unknown`, in the Skat.
+    /// Which seat holds them is not known from this set.
+    pub unseen: CardSet,
+    /// The seat does not know the Skat (defender, or Hand declarer), so
+    /// unseen cards may lie in it.
+    pub skat_unknown: bool,
 }
 
 fn completed(trick: &CompletedTrick) -> Trick {
