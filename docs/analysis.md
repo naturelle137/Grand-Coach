@@ -68,7 +68,12 @@ It reuses one `Analysis`; it runs no search of its own.
   holds for facts resting on a card of the trick in progress or the last
   completed trick, so a lesson is not repeated at every card;
   `Mechanism(kind)` holds when the comparison carries a mechanism of that
-  kind. Contract version 3: `Comparison::mechanisms` (version 2:
+  kind. Then come the pre-play lessons of D-57, `game-value` and
+  `hand-structure` ([coach.md](coach.md#pre-play-lessons-d-57)); the
+  condition `OpeningCall` holds at a bidding decision before the seat's
+  own first call (`Snapshot::own_calls`). Contract version 4: the
+  observations `Structure`, `GameValues` and `Commitment` and
+  `Snapshot::own_calls` (version 3: `Comparison::mechanisms`; version 2:
   `Source::Trick` names the led card and the card played).
 - `mechanism::mechanisms(view, action)` (D-56) decides two exact
   questions about the trick after the chosen card, from the view only:
@@ -81,6 +86,18 @@ It reuses one `Analysis`; it runs no search of its own.
   for every set of places, the cards allowed only there fit (Hall's
   condition). Conditions are checked jointly; a Trumpf count or a void
   alone proves nothing for a seat.
+- `preplay` (D-57) gives the bidder or declarer before card play exact
+  observations, from the view and the rules only: per Farbspiel and
+  Grand the own Buben, Trumpf and Spitzen (`Structure`), per game type
+  the value range of each contract still possible (`GameValues`: with
+  pickup, Hand, Null Ouvert, Hand Ouvert) and the value the game must
+  reach (`Commitment`: the bid, or the lowest value an own Bid or Hold
+  commits to). An unknown Skat counts for the Spitzen, so ranges run over
+  every pair of unseen cards (at most 231); after pickup the twelve cards,
+  and after Drücken the own Skat, fix them. Values leave out Schneider and
+  Schwarz made in play; `Reach` says whether a contract reaches the
+  value, only with a suitable Skat, only with such levels, or never.
+  Nothing here estimates winning or prefers a game.
 
 ## Knowledge (card counter)
 
