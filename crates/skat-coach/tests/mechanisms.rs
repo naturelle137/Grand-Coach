@@ -275,6 +275,7 @@ fn same_view_other_concealed_cards_same_review() {
         assert_eq!(va, vb, "the swap must not change the view");
         let ea = advise(&va, SMALL, 7, None).unwrap();
         let eb = advise(&vb, SMALL, 7, None).unwrap();
+        assert_eq!(ea, eb, "the whole explanation");
         for &action in &va.legal_actions {
             let ra = review(&ea, action).unwrap();
             let rb = review(&eb, action).unwrap();
