@@ -3,6 +3,11 @@
 How the live coach of M5 explains a decision (D-48). Details are in the
 code (`crates/skat-coach`, `crates/skat-app/src/coach.rs`).
 
+Planned didactic improvements and the implementation comparison are in
+[coach-didactics.md](coach-didactics.md); agent-sized follow-up issues are
+listed in [coach-work-packages.md](coach-work-packages.md). These are planned
+changes, not a claim of current lesson coverage.
+
 ## Evidence only from the analysis
 
 `skat_coach::explain(view, analysis)` turns one `Analysis` of the human's

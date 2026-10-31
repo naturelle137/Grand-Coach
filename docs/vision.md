@@ -54,6 +54,11 @@ the opponents' shoes**.
 - **Statistics over time**: error types are collected (e.g. "misjudged the
   remaining trumps") so that weaknesses become visible.
 
+The planned didactic follow-up prioritises relevant questions, conditional
+explanations and independent transfer. See [coach-didactics.md](coach-didactics.md)
+and [coach-work-packages.md](coach-work-packages.md). It extends the shared
+analysis and existing coach rather than introducing a second strategy engine.
+
 ### Card counting
 
 - **Counting aid** (optional): cards played, trumps still out, card points of
