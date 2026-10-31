@@ -18,9 +18,20 @@
 //!
 //! Information boundary: [`explain`] takes the deciding seat's
 //! [`PlayerView`] and the analysis of exactly that view (D-23).
+//!
+//! Lessons (D-53): the analysis gathers the permitted [`Evidence`] and
+//! checks lesson predicates ([`Lesson::check`]); the coach only selects a
+//! lesson with [`teach`] and falls back to the model comparison when none
+//! applies.
 
+use skat_analysis::lesson::{catalogue, compare as compare_options, gather};
 use skat_analysis::{Budget, Cancel, analyze, utility};
 use skat_core::{Action, Contract, GameType, KontraLevel, Phase, PlayerView, Seat};
+
+pub use skat_analysis::lesson::{
+    Check, Claim, Comparison, Evidence, EvidenceClass, Item, Lesson, LessonId, LessonKind,
+    Reliability, Role, Snapshot, Source,
+};
 
 pub use skat_analysis::sampling::Place;
 pub use skat_analysis::{
@@ -79,18 +90,6 @@ pub enum Decision {
     Kontra,
     /// Answer Kontra with Re or not.
     Re,
-}
-
-/// The deciding seat's role.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Role {
-    /// Before the declarer is known.
-    Bidder,
-    /// Alleinspieler.
-    Declarer,
-    /// Gegenspieler.
-    Defender,
 }
 
 /// What the declarer has to achieve in this game (rule facts of the
@@ -311,6 +310,43 @@ pub struct Explanation {
     pub basis: Basis,
     /// Model assumptions behind the estimates.
     pub assumptions: Vec<Assumption>,
+    /// The permitted evidence of the decision, with provenance.
+    pub evidence: Evidence,
+    /// The comparison of each legal action with the best, in the order of
+    /// `actions`.
+    pub comparisons: Vec<Comparison>,
+}
+
+/// The lesson the coach teaches at a decision, if any (D-53).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Teaching {
+    /// A supported lesson applies.
+    Lesson {
+        /// The lesson.
+        id: LessonId,
+        /// The evidence it cites (indices into [`Evidence::items`]).
+        items: Vec<usize>,
+    },
+    /// No supported lesson applies: only the model comparison is
+    /// available, no strategic reason.
+    Fallback,
+}
+
+/// The first lesson of `lessons` that applies to `evidence` (with the
+/// chosen option's `comparison` after the move, `None` before it), or the
+/// fallback.
+pub fn teach(lessons: &[Lesson], evidence: &Evidence, comparison: Option<&Comparison>) -> Teaching {
+    lessons
+        .iter()
+        .find_map(|lesson| match lesson.check(evidence, comparison) {
+            Check::Applies { items } => Some(Teaching::Lesson {
+                id: lesson.id.clone(),
+                items,
+            }),
+            Check::Fails(_) => None,
+        })
+        .unwrap_or(Teaching::Fallback)
 }
 
 /// Why the coach warns before an action. It names no alternative (D-49):
@@ -411,6 +447,10 @@ pub struct Hints {
     pub basis: Basis,
     /// Model assumptions behind the estimates.
     pub assumptions: Vec<Assumption>,
+    /// The permitted evidence; it names no action.
+    pub evidence: Evidence,
+    /// A fact lesson at most: mechanisms need the move first.
+    pub teaching: Teaching,
 }
 
 /// The coach's hints for `e` up to `stage`.
@@ -448,6 +488,8 @@ pub fn hints(e: &Explanation, stage: Stage) -> Hints {
         figures,
         basis: e.basis,
         assumptions: e.assumptions.clone(),
+        evidence: e.evidence.clone(),
+        teaching: teach(&catalogue(), &e.evidence, None),
     }
 }
 
@@ -501,6 +543,12 @@ pub struct MoveReview {
     pub basis: Basis,
     /// Model assumptions behind the estimates.
     pub assumptions: Vec<Assumption>,
+    /// The permitted evidence of the decision.
+    pub evidence: Evidence,
+    /// The chosen option compared with the best.
+    pub comparison: Comparison,
+    /// The lesson, or the fallback to the model comparison.
+    pub teaching: Teaching,
 }
 
 impl MoveReview {
@@ -525,6 +573,7 @@ impl MoveReview {
 /// Judges `chosen` in the decision `e` explains. `None` if `chosen` is not
 /// one of its options.
 pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
+    let comparison = *e.comparisons.iter().find(|c| c.chosen == chosen)?;
     let chosen = e.option(chosen)?.clone();
     let trap = e
         .options
@@ -547,6 +596,9 @@ pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
         trap,
         basis: e.basis,
         assumptions: e.assumptions.clone(),
+        evidence: e.evidence.clone(),
+        comparison,
+        teaching: teach(&catalogue(), &e.evidence, Some(&comparison)),
     })
 }
 
@@ -684,11 +736,7 @@ pub fn explain(view: &PlayerView, analysis: &Analysis) -> Option<Explanation> {
         return None;
     }
     let decision = decision(view);
-    let role = match view.declarer {
-        None => Role::Bidder,
-        Some(d) if d == view.seat => Role::Declarer,
-        Some(_) => Role::Defender,
-    };
+    let role = Role::of(view);
     let options = compare(view, analysis, role);
     let verdict = verdict(&options);
     let important = analysis.status == Status::Complete
@@ -726,6 +774,12 @@ pub fn explain(view: &PlayerView, analysis: &Analysis) -> Option<Explanation> {
             effective_samples: analysis.effort.effective_samples,
         },
         assumptions: analysis.assumptions.clone(),
+        evidence: gather(view, analysis),
+        comparisons: view
+            .legal_actions
+            .iter()
+            .filter_map(|&a| compare_options(view, analysis, a))
+            .collect(),
     })
 }
 
