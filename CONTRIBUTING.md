@@ -146,7 +146,11 @@ like any other PR. The procedure is the skill
 checklist items the agent verified as done and accepts no other change to
 the issue text (D-29). It runs the full gate before opening the PR (draft if
 red) and starts CI for it (D-30). Requires the repository secret `CLAUDE_CODE_OAUTH_TOKEN`
-(created with `claude setup-token`).
+(created with `claude setup-token`). Optional secret `PR_CREATION_TOKEN`:
+a maintainer's fine-grained token (repository access to this repository,
+permission "Pull requests: Read and write") that opens the PR, so it
+triggers CI directly; without it the PR comes from `github-actions` and the
+workflow dispatches CI itself.
 
 ## Licences
 
