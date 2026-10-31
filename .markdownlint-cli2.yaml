@@ -9,3 +9,6 @@ config:
     siblings_only: true
   # Tables are not padded to aligned columns.
   MD060: false
+# Local scratch files (ignored by git) are not linted.
+ignores:
+  - ".tmp/**"

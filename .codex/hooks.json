@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/var/home/critter/lokal/dev/grand-coach/.codex/hooks/guard-git.sh'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git -C \"$CLAUDE_PROJECT_DIR\" config core.hooksPath .githooks"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/var/home/critter/lokal/dev/grand-coach/.codex/hooks/ci-stop-gate.sh'",
+            "timeout": 1800
+          }
+        ]
+      }
+    ]
+  }
+}
