@@ -14,7 +14,9 @@
 //! No telling ahead (D-49): before the move a frontend shows only
 //! [`Hints`], revealed stage by stage and never naming the best option;
 //! after the move [`review`] judges the chosen action, and at the end of
-//! the game [`moments`] picks the particularly good and bad decisions.
+//! the game [`moments`] picks zero to three teachable moments, one per
+//! [`Concept`]. The player may choose one concept as focus; the coach
+//! never diagnoses one.
 //!
 //! Information boundary: [`explain`] takes the deciding seat's
 //! [`PlayerView`] and the analysis of exactly that view (D-23).
@@ -63,20 +65,123 @@ pub const MARGIN_SE: f64 = 2.0;
 /// not mentioned as a reason.
 pub const CHANCE_STEP: f64 = 0.05;
 
-/// A worse choice is a bad moment of the debriefing only if it is
+/// A worse choice counts as a bad moment of the debriefing only if it is
 /// expected to cost at least this many Seeger-Fabian points; smaller
-/// losses get the note after the move only.
+/// losses are a neutral moment at most and get the note after the move.
 pub const MOMENT_POINTS: f64 = 5.0;
 
-/// At most this many bad moments in the end-of-game debriefing.
-pub const BAD_MOMENTS: usize = 3;
-
-/// At most this many good moments in the end-of-game debriefing.
-pub const GOOD_MOMENTS: usize = 2;
-
-/// At most this many moments in the end-of-game debriefing in total
-/// (interim stable subset, see [`moments`]).
+/// At most this many primary moments in the end-of-game debriefing, at
+/// most one per [`Concept`] (see [`moments`]). A product default to test
+/// with learners, not a research-established optimum.
 pub const PRIMARY_MOMENTS: usize = 3;
+
+/// A teaching concept: one per supported lesson of the catalogue. The
+/// player may choose one as the optional focus of a learning game; the
+/// coach never chooses or diagnoses one by itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Concept {
+    /// [`HAND_STRUCTURE`]: own Buben, Trumpf and Spitzen.
+    HandStructure,
+    /// [`GAME_VALUE`]: legal game values against the bid.
+    GameValue,
+    /// [`PROVEN_VOID`]: a seat that did not follow holds no such card.
+    ProvenVoid,
+    /// [`REMAINING_TRUMPF`]: where the Trumpf are, as far as known.
+    RemainingTrumpf,
+    /// [`TRUMPF_VULNERABILITY`]: a later seat can trump a full side card.
+    TrumpfVulnerability,
+    /// [`PARTNER_OVERTAKE`]: the partner, playing last, can beat the
+    /// declarer's card.
+    PartnerOvertake,
+}
+
+impl Concept {
+    /// Every concept, in the order of a game: before card play first.
+    pub const ALL: [Concept; 6] = [
+        Concept::HandStructure,
+        Concept::GameValue,
+        Concept::ProvenVoid,
+        Concept::RemainingTrumpf,
+        Concept::TrumpfVulnerability,
+        Concept::PartnerOvertake,
+    ];
+
+    /// The key of its lesson ([`LessonId::key`]).
+    pub fn key(self) -> &'static str {
+        match self {
+            Concept::HandStructure => HAND_STRUCTURE,
+            Concept::GameValue => GAME_VALUE,
+            Concept::ProvenVoid => PROVEN_VOID,
+            Concept::RemainingTrumpf => REMAINING_TRUMPF,
+            Concept::TrumpfVulnerability => TRUMPF_VULNERABILITY,
+            Concept::PartnerOvertake => PARTNER_OVERTAKE,
+        }
+    }
+
+    /// The concept of a lesson; `None` for a lesson outside the catalogue.
+    pub fn of(id: &LessonId) -> Option<Concept> {
+        Concept::ALL.into_iter().find(|c| c.key() == id.key)
+    }
+
+    /// A mechanism lesson (after the move, with a reliable comparison).
+    pub fn mechanism(self) -> bool {
+        matches!(
+            self,
+            Concept::TrumpfVulnerability | Concept::PartnerOvertake
+        )
+    }
+}
+
+/// A lesson that applies at a decision, with what it says (D-53).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Taught {
+    /// Its concept.
+    pub concept: Concept,
+    /// The lesson and the evidence it cites.
+    pub teaching: Teaching,
+    /// What it says.
+    pub content: LessonContent,
+}
+
+/// Every lesson of `lessons` that applies to `evidence` (with the chosen
+/// option's `comparison` after the move, `None` before it), has a
+/// [`Concept`] and content, in the order of `lessons`.
+pub fn taught(
+    lessons: &[Lesson],
+    evidence: &Evidence,
+    comparison: Option<&Comparison>,
+) -> Vec<Taught> {
+    lessons
+        .iter()
+        .filter_map(|lesson| {
+            let Check::Applies { items } = lesson.check(evidence, comparison) else {
+                return None;
+            };
+            let concept = Concept::of(&lesson.id)?;
+            let teaching = Teaching::Lesson {
+                id: lesson.id.clone(),
+                items,
+            };
+            let content = lesson_content(&teaching, evidence, comparison)?;
+            Some(Taught {
+                concept,
+                teaching,
+                content,
+            })
+        })
+        .collect()
+}
+
+/// The lesson to show of `taught`: the one of `focus` if it applies,
+/// otherwise the first.
+pub fn pick(taught: &[Taught], focus: Option<Concept>) -> Option<&Taught> {
+    taught
+        .iter()
+        .find(|t| Some(t.concept) == focus)
+        .or_else(|| taught.first())
+}
 
 /// The kind of decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -642,16 +747,40 @@ pub struct Hints {
     pub assumptions: Vec<Assumption>,
     /// The permitted evidence; it names no action.
     pub evidence: Evidence,
-    /// A fact lesson at most: mechanisms need the move first.
+    /// A fact lesson at most: mechanisms need the move first. With a
+    /// focus, the focused lesson if it applies.
     pub teaching: Teaching,
     /// What that lesson says; before the move a frontend shows only its
     /// attention question.
     pub lesson: Option<LessonContent>,
+    /// The concept of that lesson.
+    pub concept: Option<Concept>,
+    /// From [`Stage::Situation`] on: ask the player to check every option
+    /// against what they know. The question is the same for every option
+    /// and every ranking (D-49), so it implies no preferred action.
+    pub compare_question: bool,
 }
 
-/// The coach's hints for `e` up to `stage`.
+impl Hints {
+    /// Whether a supported lesson backs these hints (pedagogical
+    /// eligibility, separate from [`SituationHint::important`]).
+    pub fn teachable(&self) -> bool {
+        self.lesson.is_some()
+    }
+}
+
+/// The coach's hints for `e` up to `stage`, without a focus.
 pub fn hints(e: &Explanation, stage: Stage) -> Hints {
-    let teaching = teach(&catalogue(), &e.evidence, None);
+    hints_for(e, stage, None)
+}
+
+/// The coach's hints for `e` up to `stage`. With a `focus`, its lesson is
+/// shown when it applies; otherwise the first lesson that applies. Only
+/// fact lessons can apply before the move, and they depend on the evidence
+/// alone, never on the ranking (D-49).
+pub fn hints_for(e: &Explanation, stage: Stage, focus: Option<Concept>) -> Hints {
+    let all = taught(&catalogue(), &e.evidence, None);
+    let shown = pick(&all, focus);
     let situation = (stage >= Stage::Situation).then(|| SituationHint {
         situation: match e.verdict {
             Verdict::Forced => Situation::Forced,
@@ -686,8 +815,10 @@ pub fn hints(e: &Explanation, stage: Stage) -> Hints {
         basis: e.basis,
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
-        lesson: lesson_content(&teaching, &e.evidence, None),
-        teaching,
+        teaching: shown.map_or(Teaching::Fallback, |t| t.teaching.clone()),
+        lesson: shown.map(|t| t.content.clone()),
+        concept: shown.map(|t| t.concept),
+        compare_question: stage >= Stage::Situation,
     }
 }
 
@@ -745,13 +876,23 @@ pub struct MoveReview {
     pub evidence: Evidence,
     /// The chosen option compared with the best.
     pub comparison: Comparison,
-    /// The lesson, or the fallback to the model comparison.
+    /// The first lesson that applies, or the fallback to the model
+    /// comparison.
     pub teaching: Teaching,
     /// What that lesson says.
     pub lesson: Option<LessonContent>,
+    /// Every lesson that applies, in catalogue order (the first is
+    /// `teaching`); a focus picks among them ([`MoveReview::lesson_for`]).
+    pub taught: Vec<Taught>,
 }
 
 impl MoveReview {
+    /// The lesson to show with `focus` ([`pick`]); `None` without a
+    /// supported lesson.
+    pub fn lesson_for(&self, focus: Option<Concept>) -> Option<&Taught> {
+        pick(&self.taught, focus)
+    }
+
     /// The short note on the move.
     pub fn note(&self) -> Note {
         if self.forced {
@@ -774,7 +915,10 @@ impl MoveReview {
 /// one of its options.
 pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
     let comparison = e.comparisons.iter().find(|c| c.chosen == chosen)?.clone();
-    let teaching = teach(&catalogue(), &e.evidence, Some(&comparison));
+    let taught = taught(&catalogue(), &e.evidence, Some(&comparison));
+    let teaching = taught
+        .first()
+        .map_or(Teaching::Fallback, |t| t.teaching.clone());
     let chosen = e.option(chosen)?.clone();
     let trap = e
         .options
@@ -798,95 +942,120 @@ pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
         basis: e.basis,
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
-        lesson: lesson_content(&teaching, &e.evidence, Some(&comparison)),
+        lesson: taught.first().map(|t| t.content.clone()),
         comparison,
         teaching,
+        taught,
     })
 }
 
-/// Whether a moment of the debriefing was particularly good or bad.
+/// How the model rated the choice at a moment of the debriefing. It
+/// orders moments with the same lesson weight; it is never a quota.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MomentKind {
-    /// An important decision decided well: a costly natural option avoided.
+    /// An important decision decided well: a costly natural option avoided
+    /// (complete analysis).
     Good,
-    /// A clearly or somewhat weaker option chosen.
+    /// A clearly or somewhat weaker option chosen, losing at least
+    /// [`MOMENT_POINTS`] (complete analysis).
     Bad,
+    /// Neither: about equal, a small difference, or a provisional analysis.
+    /// The lesson is the point of the moment.
+    Neutral,
 }
 
-/// One moment of the end-of-game debriefing.
+/// One primary moment of the end-of-game debriefing.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Moment {
-    /// Good or bad.
+    /// The model's reading of the choice.
     pub kind: MomentKind,
+    /// The concept the moment teaches; no other moment has it.
+    pub concept: Concept,
+    /// `concept` is the player's focus.
+    pub focused: bool,
+    /// What the lesson says.
+    pub lesson: LessonContent,
     /// The decision.
     pub review: MoveReview,
 }
 
-/// The particularly good and bad moments of a game's own decisions, in
-/// game order (D-49): the [`BAD_MOMENTS`] costliest weaker choices (losing
-/// at least [`MOMENT_POINTS`]) and the
-/// [`GOOD_MOMENTS`] important decisions that avoided the costliest trap.
-/// Only complete analyses count.
+/// The primary moments of a game's own decisions (`reviews` in game
+/// order), zero to [`PRIMARY_MOMENTS`], shown in game order.
 ///
-/// Of these at most [`PRIMARY_MOMENTS`] remain, taken in this order: the
-/// costliest bad moment, the good moment with the costliest trap, then the
-/// other bad and good moments by the same measures (ties in game order).
-/// So a game with both kinds shows both. Interim rule until moments are
-/// chosen by teaching concept (`docs/coach-didactics.md`).
-pub fn moments(reviews: &[MoveReview]) -> Vec<Moment> {
-    let complete = |r: &&MoveReview| r.status == Status::Complete && !r.forced;
-    let mut bad: Vec<(usize, &MoveReview)> = reviews
+/// Eligible is a decision with a choice and a supported lesson
+/// ([`MoveReview::lesson_for`] with `focus`); a score gap or an avoided
+/// trap alone never is. Fact lessons are exact, so a provisional analysis
+/// stays eligible, as a [`MomentKind::Neutral`] moment. Eligible moments
+/// are taken in this order, at most one per concept:
+///
+/// 1. the lesson of `focus`;
+/// 2. a complete analysis rating the choice clearly ([`MomentKind::Good`]
+///    or [`MomentKind::Bad`]);
+/// 3. a mechanism lesson (exact, after the move) before a fact lesson;
+/// 4. the larger loss or avoided trap;
+/// 5. game order.
+///
+/// No minimum of good or bad moments; a game without an eligible decision
+/// has none.
+pub fn moments(reviews: &[MoveReview], focus: Option<Concept>) -> Vec<Moment> {
+    let mut eligible: Vec<(usize, MomentKind, f64, &Taught)> = reviews
         .iter()
         .enumerate()
-        .filter(|(_, r)| complete(r))
-        .filter(|(_, r)| {
-            matches!(r.chosen.judgement, Judgement::Worse | Judgement::Weak)
-                && r.chosen.gap >= MOMENT_POINTS
+        .filter(|(_, r)| !r.forced)
+        .filter_map(|(i, r)| {
+            let taught = r.lesson_for(focus)?;
+            let (kind, signal) = signal(r);
+            Some((i, kind, signal, taught))
         })
         .collect();
-    bad.sort_by(|a, b| {
-        b.1.chosen
-            .gap
-            .total_cmp(&a.1.chosen.gap)
+    eligible.sort_by(|a, b| {
+        let focused = |t: &Taught| Some(t.concept) == focus;
+        focused(b.3)
+            .cmp(&focused(a.3))
+            .then((b.1 != MomentKind::Neutral).cmp(&(a.1 != MomentKind::Neutral)))
+            .then(b.3.concept.mechanism().cmp(&a.3.concept.mechanism()))
+            .then(b.2.total_cmp(&a.2))
             .then(a.0.cmp(&b.0))
     });
-    bad.truncate(BAD_MOMENTS);
-    let avoided = |r: &MoveReview| r.trap.as_ref().map_or(0.0, |t| t.gap);
-    let mut good: Vec<(usize, &MoveReview)> = reviews
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| complete(r))
-        .filter(|(_, r)| {
-            r.important
-                && r.trap.is_some()
-                && matches!(r.chosen.judgement, Judgement::Best | Judgement::Equivalent)
-        })
-        .collect();
-    good.sort_by(|a, b| avoided(b.1).total_cmp(&avoided(a.1)).then(a.0.cmp(&b.0)));
-    good.truncate(GOOD_MOMENTS);
-    let mut bad = bad.into_iter().map(|(i, r)| (i, MomentKind::Bad, r));
-    let mut good = good.into_iter().map(|(i, r)| (i, MomentKind::Good, r));
-    let costliest = [bad.next(), good.next()];
-    let mut out: Vec<(usize, Moment)> = costliest
+    let mut chosen: Vec<(usize, MomentKind, &Taught)> = Vec::new();
+    for (i, kind, _, taught) in eligible {
+        if chosen.len() == PRIMARY_MOMENTS {
+            break;
+        }
+        if chosen.iter().all(|c| c.2.concept != taught.concept) {
+            chosen.push((i, kind, taught));
+        }
+    }
+    chosen.sort_by_key(|c| c.0);
+    chosen
         .into_iter()
-        .flatten()
-        .chain(bad)
-        .chain(good)
-        .take(PRIMARY_MOMENTS)
-        .map(|(i, kind, r)| {
-            (
-                i,
-                Moment {
-                    kind,
-                    review: r.clone(),
-                },
-            )
+        .map(|(i, kind, taught)| Moment {
+            kind,
+            concept: taught.concept,
+            focused: Some(taught.concept) == focus,
+            lesson: taught.content.clone(),
+            review: reviews[i].clone(),
         })
-        .collect();
-    out.sort_by_key(|(i, _)| *i);
-    out.into_iter().map(|(_, m)| m).collect()
+        .collect()
+}
+
+/// The model's reading of a review and its weight: the loss of a weaker
+/// choice or the loss of the trap avoided; only complete analyses count.
+fn signal(r: &MoveReview) -> (MomentKind, f64) {
+    if r.status != Status::Complete {
+        return (MomentKind::Neutral, 0.0);
+    }
+    let gap = r.chosen.gap;
+    match r.chosen.judgement {
+        Judgement::Worse | Judgement::Weak if gap >= MOMENT_POINTS => (MomentKind::Bad, gap),
+        Judgement::Best | Judgement::Equivalent if r.important => match &r.trap {
+            Some(t) => (MomentKind::Good, t.gap),
+            None => (MomentKind::Neutral, 0.0),
+        },
+        _ => (MomentKind::Neutral, 0.0),
+    }
 }
 
 impl Explanation {
@@ -906,6 +1075,18 @@ impl Explanation {
     /// The comparison of `action`.
     pub fn option(&self, action: Action) -> Option<&ComparedOption> {
         self.options.iter().find(|o| o.action == action)
+    }
+
+    /// Pedagogical eligibility before the move: a supported (fact) lesson
+    /// applies, with a `focus` that lesson. Separate from
+    /// [`Explanation::important`] and from warnings, which stay engine
+    /// judgements; automatic teaching needs this.
+    pub fn teachable(&self, focus: Option<Concept>) -> bool {
+        let all = taught(&catalogue(), &self.evidence, None);
+        match focus {
+            Some(c) => all.iter().any(|t| t.concept == c),
+            None => !all.is_empty(),
+        }
     }
 
     /// The warning before `action`: only for a complete analysis in which

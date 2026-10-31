@@ -28,7 +28,11 @@ overtaking in the current trick
 ([coach.md](coach.md#card-play-mechanisms-d-56)). Package E (#45, D-57)
 adds the pre-play lessons on own hand structure and legal game values
 ([coach.md](coach.md#pre-play-lessons-d-57)); the pre-play estimates stay
-coarse. No learner UAT has been run yet.
+coarse. Package F (#46, D-58) adds one optional learning focus, lesson-backed
+automatic hints with a neutral comparison question, skipping, and debriefing
+moments chosen by lesson, focus and concept
+([coach.md](coach.md#focus-and-teachable-moments-d-58)). No learner UAT has
+been run yet.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.

@@ -3,10 +3,10 @@
 //! The live coach through the application interface: intervention levels,
 //! staged requests, the important-decision policy, the pre-move warning,
 //! the note after the move and the debriefing, stale, cancelled and
-//! incomplete results, settings changes, and that the coach never changes
-//! the game or the opponents.
+//! incomplete results, settings changes, the learning focus, skipping
+//! advice, and that the coach never changes the game or the opponents.
 
-use skat_app::coach_model::{Judgement, MomentKind, Note, Stage, Status, hints};
+use skat_app::coach_model::{Concept, Judgement, Note, Stage, Status, hints_for};
 use skat_app::{
     Action, Advice, AppError, AppEvent, Budget, Cancel, CoachEvent, CoachLevel, CoachSettings,
     Command, Debriefing, Level, Opponents, Pending, Phase, SeriesLength, Session, SessionConfig,
@@ -39,6 +39,7 @@ fn settings(level: CoachLevel, warnings: bool) -> CoachSettings {
         level,
         warnings,
         show_figures: true,
+        focus: None,
     }
 }
 
@@ -131,7 +132,8 @@ fn levels_and_requests() {
         assert_eq!(s.view().coach.next_stage, Some(Stage::Considerations));
     }
 
-    // Every move: on its own, at every decision.
+    // Every move: on its own at every decision with a supported lesson, a
+    // compact status at the others.
     set(&mut s, CoachLevel::EveryMove, false);
     for _ in 0..4 {
         if !to_human(&mut s) {
@@ -139,10 +141,27 @@ fn levels_and_requests() {
         }
         assert_eq!(s.view().coach.advice, Advice::Computing);
         run_coach(&mut s);
-        assert!(matches!(
-            s.view().coach.advice,
-            Advice::Ready(_) | Advice::Provisional(_)
-        ));
+        let teachable = s
+            .coach_result()
+            .and_then(|r| r.explanation())
+            .is_some_and(|e| e.teachable(None));
+        match s.view().coach.advice {
+            Advice::Ready(h) | Advice::Provisional(h) => {
+                assert!(teachable && h.teachable());
+                assert_eq!(h.stage, Stage::Considerations);
+            }
+            Advice::NoLesson => {
+                assert!(!teachable);
+                // Asking still shows the first stage.
+                let mut asked = s.clone();
+                asked.execute(Command::RequestAdvice).unwrap();
+                assert!(matches!(
+                    asked.view().coach.advice,
+                    Advice::Ready(_) | Advice::Provisional(_)
+                ));
+            }
+            other => panic!("{other:?}"),
+        }
         assert!(s.view().coach.help_available);
         let action = simple_action(&s.view());
         s.execute(Command::Act(action)).unwrap();
@@ -158,13 +177,16 @@ fn levels_and_requests() {
 }
 
 #[test]
-fn important_level_shows_exactly_the_important_decisions() {
+fn important_level_shows_exactly_the_important_teachable_decisions() {
+    // Automatic teaching needs both the engine's important mark and a
+    // supported lesson (pedagogical eligibility); either alone shows
+    // nothing on its own.
     let mut s = session(2, true);
     s.set_coach_budget(LATE);
     set(&mut s, CoachLevel::Important, false);
-    let (mut shown, mut hidden) = (0, 0);
+    let (mut shown, mut hidden, mut important_only) = (0, 0, 0);
     let mut decisions = 0;
-    while decisions < 60 && to_human(&mut s) {
+    while decisions < 120 && to_human(&mut s) {
         let view = s.view();
         // Before card play the analysis is slow; decide quickly there.
         if view.phase == Phase::Spiel {
@@ -174,16 +196,20 @@ fn important_level_shows_exactly_the_important_decisions() {
             s.finish_coach(result).unwrap();
             let explanation = explanation.expect("analysed");
             let important = explanation.status == Status::Complete && explanation.important;
+            let teachable = explanation.teachable(None);
             match s.view().coach.advice {
                 Advice::Ready(e) => {
-                    assert!(important);
+                    assert!(important && teachable);
                     // The situation shows on its own, the figures only on
                     // request, and never the ranking.
-                    assert_eq!(*e, hints(&explanation, Stage::Situation));
+                    assert_eq!(*e, hints_for(&explanation, Stage::Situation, None));
                     shown += 1;
                 }
                 Advice::None => {
-                    assert!(!important);
+                    assert!(!(important && teachable));
+                    if important {
+                        important_only += 1;
+                    }
                     hidden += 1;
                     // The help action still explains it.
                     s.execute(Command::RequestAdvice).unwrap();
@@ -199,7 +225,10 @@ fn important_level_shows_exactly_the_important_decisions() {
         s.execute(Command::Act(action)).unwrap();
         decisions += 1;
     }
-    assert!(shown > 0 && hidden > 0, "shown {shown}, hidden {hidden}");
+    assert!(
+        shown > 0 && hidden > 0,
+        "shown {shown}, hidden {hidden}, important without lesson {important_only}"
+    );
 }
 
 /// A session at a human card-play decision with a weak option, its
@@ -456,11 +485,22 @@ fn settings_changes_keep_the_game() {
                     level,
                     warnings,
                     show_figures,
+                    focus: None,
                 };
                 s.execute(Command::SetCoach(settings)).unwrap();
                 assert_eq!(s.view().coach.settings, settings);
                 assert_eq!(game_part(&s.view()), before);
             }
+        }
+        for focus in std::iter::once(None).chain(Concept::ALL.into_iter().map(Some)) {
+            let settings = CoachSettings {
+                level,
+                focus,
+                ..CoachSettings::default()
+            };
+            s.execute(Command::SetCoach(settings)).unwrap();
+            assert_eq!(s.view().coach.settings, settings);
+            assert_eq!(game_part(&s.view()), before);
         }
     }
     // Turning warnings off withdraws a held action without playing it.
@@ -577,14 +617,19 @@ fn requests_reveal_one_stage_at_a_time() {
     assert_eq!(stage(&s), Some(Stage::Situation));
     assert_eq!(s.view().coach.next_stage, None);
 
-    // Every move shows the considerations on its own.
+    // Every move shows the considerations on its own where a lesson
+    // applies, otherwise the compact status and the first stage on request.
     set(&mut s, CoachLevel::EveryMove, false);
     let action = simple_action(&s.view());
     s.execute(Command::Act(action)).unwrap();
     if to_human(&mut s) {
         run_coach(&mut s);
-        assert_eq!(stage(&s), Some(Stage::Considerations));
-        assert_eq!(s.view().coach.next_stage, Some(Stage::Situation));
+        if s.view().coach.advice == Advice::NoLesson {
+            assert_eq!(s.view().coach.next_stage, Some(Stage::Considerations));
+        } else {
+            assert_eq!(stage(&s), Some(Stage::Considerations));
+            assert_eq!(s.view().coach.next_stage, Some(Stage::Situation));
+        }
     }
 }
 
@@ -635,9 +680,14 @@ fn every_own_move_gets_a_note_even_if_analysed_afterwards() {
 }
 
 #[test]
-fn debriefing_names_the_bad_moment_after_the_game() {
+fn debriefing_shows_teachable_moments_after_the_game() {
     let (mut s, weak, _) = weak_position();
-    set(&mut s, CoachLevel::EveryMove, true);
+    let focus = Some(Concept::RemainingTrumpf);
+    s.execute(Command::SetCoach(CoachSettings {
+        focus,
+        ..settings(CoachLevel::EveryMove, true)
+    }))
+    .unwrap();
     s.execute(Command::Act(weak)).unwrap();
     s.execute(Command::ProceedAnyway).unwrap();
     let last = s.view().coach.last_move.expect("a note");
@@ -664,21 +714,216 @@ fn debriefing_names_the_bad_moment_after_the_game() {
     // the debriefing.
     assert!(forced, "the game ran to its last trick");
     assert_eq!(s.view().coach.last_move, None);
-    match s.view().coach.debriefing {
-        Some(Debriefing::Ready(moments)) => {
-            assert!(moments.iter().any(|m| m.kind == MomentKind::Bad
-                && m.review.chosen.action == weak
-                && m.review.chosen.judgement == Judgement::Weak
-                && m.review.best.is_some()));
-        }
-        other => panic!("{other:?}"),
+    let Some(Debriefing::Ready(moments)) = s.view().coach.debriefing else {
+        panic!("debriefing ready");
+    };
+    // Zero to three moments, each with a supported lesson of its own
+    // concept, never forced, in game order.
+    assert!(moments.len() <= 3);
+    let mut concepts: Vec<Concept> = moments.iter().map(|m| m.concept).collect();
+    concepts.dedup();
+    assert_eq!(concepts.len(), moments.len(), "one per concept");
+    let tricks: Vec<_> = moments.iter().map(|m| m.review.trick).collect();
+    assert!(tricks.is_sorted(), "{tricks:?}");
+    for m in &moments {
+        assert!(!m.review.forced);
+        let taught = m.review.lesson_for(focus).expect("a supported lesson");
+        assert_eq!((taught.concept, &taught.content), (m.concept, &m.lesson));
+        assert_eq!(m.focused, Some(m.concept) == focus);
     }
-    // The next game starts afresh.
+    // Changing the focus after the game re-selects from the same reviews
+    // without any new analysis or change to the game.
+    let before = game_part(&s.view());
+    s.execute(Command::SetCoach(CoachSettings {
+        focus: None,
+        ..s.coach_settings()
+    }))
+    .unwrap();
+    assert!(s.coach_job().is_none(), "no new analysis");
+    assert_eq!(game_part(&s.view()), before);
+    assert!(matches!(
+        s.view().coach.debriefing,
+        Some(Debriefing::Ready(m)) if m.iter().all(|m| !m.focused)
+    ));
+    // The next game starts afresh; explicit choices, the focus included,
+    // stay.
+    s.execute(Command::SetCoach(CoachSettings {
+        focus,
+        ..s.coach_settings()
+    }))
+    .unwrap();
     if !s.view().series_finished {
         s.execute(Command::NextGame).unwrap();
         let coach = s.view().coach;
         assert_eq!((coach.last_move, coach.debriefing), (None, None));
-        // An explicitly chosen figure setting stays.
         assert!(coach.settings.show_figures);
+        assert_eq!(coach.settings.level, CoachLevel::EveryMove);
+        assert_eq!(coach.settings.focus, focus);
+    }
+}
+
+/// A session at a human card-play decision late in a game whose finished
+/// analysis teaches both `proven-void` and `remaining-trumpf`; no analysis
+/// is due. The coach is off until then, so nothing is queued.
+fn two_lessons() -> Session {
+    for seed in 0..40 {
+        let mut s = session(seed, false);
+        s.set_coach_budget(LATE);
+        set(&mut s, CoachLevel::Off, false);
+        while to_human(&mut s) {
+            if s.view().phase == Phase::Spiel && s.view().tricks_played >= 5 {
+                set(&mut s, CoachLevel::OnRequest, false);
+                run_coach(&mut s);
+                let e = s.coach_result().and_then(|r| r.explanation()).cloned();
+                if e.is_some_and(|e| {
+                    e.teachable(Some(Concept::ProvenVoid))
+                        && e.teachable(Some(Concept::RemainingTrumpf))
+                }) {
+                    assert!(s.coach_job().is_none());
+                    return s;
+                }
+                set(&mut s, CoachLevel::Off, false);
+            }
+            let action = simple_action(&s.view());
+            s.execute(Command::Act(action)).unwrap();
+        }
+    }
+    panic!("no decision with two lessons");
+}
+
+#[test]
+fn focus_changes_reuse_the_analysis_and_keep_the_game() {
+    let mut s = two_lessons();
+    let before = game_part(&s.view());
+    let unasked = s.clone();
+    s.execute(Command::RequestAdvice).unwrap();
+    let concept = |s: &Session| match s.view().coach.advice {
+        Advice::Ready(h) | Advice::Provisional(h) => h.concept,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(concept(&s), Some(Concept::ProvenVoid), "catalogue order");
+    for (focus, expected) in [
+        (Some(Concept::RemainingTrumpf), Concept::RemainingTrumpf),
+        (Some(Concept::ProvenVoid), Concept::ProvenVoid),
+        (Some(Concept::GameValue), Concept::ProvenVoid),
+        (None, Concept::ProvenVoid),
+    ] {
+        s.execute(Command::SetCoach(CoachSettings {
+            focus,
+            ..s.coach_settings()
+        }))
+        .unwrap();
+        assert_eq!(concept(&s), Some(expected), "{focus:?}");
+        // No new search for a focus change or a hint stage.
+        assert!(s.coach_job().is_none());
+        assert_eq!(game_part(&s.view()), before);
+    }
+    // Every move with a focus that does not apply here: compact status;
+    // with an applying focus: its lesson on its own (nothing requested).
+    for (focus, expected) in [
+        (Concept::HandStructure, None),
+        (Concept::RemainingTrumpf, Some(Concept::RemainingTrumpf)),
+    ] {
+        let mut t = unasked.clone();
+        t.execute(Command::SetCoach(CoachSettings {
+            focus: Some(focus),
+            ..settings(CoachLevel::EveryMove, false)
+        }))
+        .unwrap();
+        match (t.view().coach.advice, expected) {
+            (Advice::NoLesson, None) => {}
+            (Advice::Ready(h) | Advice::Provisional(h), Some(c)) => {
+                assert_eq!(h.concept, Some(c));
+            }
+            (other, _) => panic!("{focus:?}: {other:?}"),
+        }
+        assert!(t.coach_job().is_none());
+        assert_eq!(game_part(&t.view()), before);
+    }
+    // The note after the move shows the focused lesson.
+    s.execute(Command::SetCoach(CoachSettings {
+        focus: Some(Concept::RemainingTrumpf),
+        ..s.coach_settings()
+    }))
+    .unwrap();
+    let action = simple_action(&s.view());
+    s.execute(Command::Act(action)).unwrap();
+    let last = s.view().coach.last_move.unwrap();
+    assert!(matches!(
+        last.lesson,
+        Some(skat_app::coach_model::LessonContent::RemainingTrumpf { .. })
+    ));
+}
+
+#[test]
+fn skipping_advice_is_optional_and_keeps_the_game() {
+    let mut s = two_lessons();
+    let mut off = s.clone();
+    set(&mut s, CoachLevel::EveryMove, false);
+    let before = game_part(&s.view());
+    assert!(matches!(s.view().coach.advice, Advice::Ready(_)));
+    assert!(s.view().coach.skippable);
+    let job = s.coach_job().is_some();
+    s.execute(Command::SkipAdvice).unwrap();
+    let coach = s.view().coach;
+    assert_eq!(coach.advice, Advice::None);
+    assert!(!coach.skippable && !coach.analysing && coach.help_available);
+    assert_eq!(coach.next_stage, Some(Stage::Considerations));
+    assert_eq!(game_part(&s.view()), before);
+    assert_eq!(s.coach_job().is_some(), job, "analyses unchanged");
+    assert_eq!(s.coach_settings(), settings(CoachLevel::EveryMove, false));
+    // Asking brings it back; skipping a requested hint hides it again.
+    s.execute(Command::RequestAdvice).unwrap();
+    assert!(matches!(s.view().coach.advice, Advice::Ready(_)));
+    s.execute(Command::SkipAdvice).unwrap();
+    assert_eq!(s.view().coach.advice, Advice::None);
+    // Playing on works as always; the note still comes.
+    let action = simple_action(&s.view());
+    s.execute(Command::Act(action)).unwrap();
+    assert!(s.view().coach.last_move.is_some_and(|m| m.note.is_some()));
+    // The next decision shows the coach again on its own.
+    if to_human(&mut s) {
+        assert_ne!(s.view().coach.advice, Advice::None);
+    }
+    // Off or without a decision: rejected, nothing changes.
+    set(&mut off, CoachLevel::Off, false);
+    let before = game_part(&off.view());
+    assert_eq!(off.execute(Command::SkipAdvice), Err(AppError::CoachOff));
+    assert_eq!(game_part(&off.view()), before);
+    let mut idle = session(1, false);
+    idle.execute(Command::Act(Action::Pass)).ok();
+    if idle.view().opponent_to_move {
+        assert_eq!(idle.execute(Command::SkipAdvice), Err(AppError::NoDecision));
+    }
+}
+
+#[test]
+fn warnings_keep_their_semantics_with_any_focus_and_level() {
+    // Warnings stay an engine judgement: they need no lesson.
+    for (level, focus) in [
+        (CoachLevel::Off, None),
+        (CoachLevel::Important, Some(Concept::HandStructure)),
+        (CoachLevel::EveryMove, Some(Concept::PartnerOvertake)),
+    ] {
+        let (mut s, weak, _) = weak_position();
+        s.execute(Command::SetCoach(CoachSettings {
+            focus,
+            ..settings(level, true)
+        }))
+        .unwrap();
+        let before = game_part(&s.view());
+        let events = s.execute(Command::Act(weak)).unwrap();
+        assert_eq!(
+            events,
+            vec![AppEvent::Coach(CoachEvent::Warned { action: weak })]
+        );
+        assert_eq!(game_part(&s.view()), before);
+        if level != CoachLevel::Off {
+            // Skipping the advice does not release the held action.
+            s.execute(Command::SkipAdvice).unwrap();
+            assert!(s.view().coach.pending.is_some());
+        }
+        s.execute(Command::ProceedAnyway).unwrap();
+        assert_ne!(game_part(&s.view()), before);
     }
 }

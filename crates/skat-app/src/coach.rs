@@ -13,8 +13,8 @@
 use serde::{Deserialize, Serialize};
 use skat_ai::{Budget, Cancel};
 use skat_coach::{
-    Explanation, Hints, LessonContent, Moment, MoveReview, Note, Stage, Status, Warning, advise,
-    decision_seed, hints, moments, review,
+    Concept, Explanation, Hints, LessonContent, Moment, MoveReview, Note, Stage, Status, Warning,
+    advise, decision_seed, hints_for, moments, review,
 };
 use skat_core::{Action, PlayerView};
 
@@ -26,10 +26,12 @@ pub enum CoachLevel {
     /// Hints only when asked for ([`crate::Command::RequestAdvice`]).
     #[default]
     OnRequest,
-    /// Shows the situation of important decisions on its own (D-48);
-    /// asking works too.
+    /// Shows the situation of important decisions on its own (D-48) when a
+    /// supported lesson applies; asking works too.
     Important,
-    /// Shows what to think about at every decision on its own.
+    /// Shows what to think about on its own at every decision with a
+    /// supported lesson, and a compact status ([`Advice::NoLesson`]) at
+    /// the others.
     EveryMove,
 }
 
@@ -54,6 +56,11 @@ pub struct CoachSettings {
     /// Show numerical estimates; without them the frontend shows only the
     /// verbal reasoning and exact facts. Off by default (D-52).
     pub show_figures: bool,
+    /// The optional learning focus, chosen by the player only (no
+    /// automatic diagnosis). It decides which lesson is shown when several
+    /// apply, limits automatic teaching to its lesson and comes first in
+    /// the debriefing. Kept for the next game until the player changes it.
+    pub focus: Option<Concept>,
 }
 
 impl Default for CoachSettings {
@@ -62,6 +69,7 @@ impl Default for CoachSettings {
             level: CoachLevel::OnRequest,
             warnings: false,
             show_figures: false,
+            focus: None,
         }
     }
 }
@@ -189,6 +197,10 @@ pub enum Advice {
     /// The analysis ran out of its work budget: estimates over the
     /// finished distributions only, no situation reading.
     Provisional(Box<Hints>),
+    /// Level "every move", but no supported lesson (of the focus) applies
+    /// here: a compact honest status instead of invented hints. Asking
+    /// still shows the stages.
+    NoLesson,
     /// No advice for this decision.
     Unavailable(Unavailable),
 }
@@ -243,8 +255,8 @@ pub enum Debriefing {
         /// Decisions left.
         remaining: u32,
     },
-    /// At most three particularly good and bad moments, in game order;
-    /// may be empty.
+    /// Zero to three primary moments with a supported lesson, one per
+    /// concept, in game order.
     Ready(Vec<Moment>),
 }
 
@@ -255,6 +267,9 @@ pub struct CoachView {
     pub settings: CoachSettings,
     /// The help action ([`crate::Command::RequestAdvice`]) is possible.
     pub help_available: bool,
+    /// Advice is shown and can be put away with
+    /// [`crate::Command::SkipAdvice`] until the next decision.
+    pub skippable: bool,
     /// The stage the next [`crate::Command::RequestAdvice`] reveals; `None`
     /// if everything is shown or there is no decision.
     pub next_stage: Option<Stage>,
@@ -291,6 +306,8 @@ pub(crate) struct CoachState {
     pub(crate) cache: Option<CoachResult>,
     /// The decision the human asked about, and the stage asked for.
     pub(crate) requested: Option<(DecisionKey, Stage)>,
+    /// The decision whose advice the human put away.
+    pub(crate) skipped: Option<DecisionKey>,
     /// An action held back.
     pub(crate) pending: Option<Pending>,
     /// Actions the human already confirmed after a warning at this
@@ -312,6 +329,7 @@ impl CoachState {
             seed,
             cache: None,
             requested: None,
+            skipped: None,
             pending: None,
             acknowledged: Vec::new(),
             queue: Vec::new(),
@@ -332,6 +350,7 @@ impl CoachState {
     pub(crate) fn decision_changed(&mut self) {
         self.cache = None;
         self.requested = None;
+        self.skipped = None;
         self.pending = None;
         self.acknowledged.clear();
     }
@@ -359,10 +378,10 @@ impl CoachState {
     fn visible(&self, key: DecisionKey) -> bool {
         self.settings.warnings
             || self.pending.is_some()
+            || self.requested.is_some_and(|(k, _)| k == key)
             || match self.settings.level {
-                CoachLevel::Off => false,
-                CoachLevel::OnRequest => self.requested.is_some_and(|(k, _)| k == key),
-                CoachLevel::Important | CoachLevel::EveryMove => true,
+                CoachLevel::Off | CoachLevel::OnRequest => false,
+                CoachLevel::Important | CoachLevel::EveryMove => self.skipped != Some(key),
             }
     }
 
@@ -375,19 +394,33 @@ impl CoachState {
         }
     }
 
-    /// The stage shown for `key`, if any (D-49). With level Important the
-    /// situation shows up on its own once the finished analysis marks the
-    /// decision important.
+    /// Whether automatic teaching applies at `key`: a supported lesson of
+    /// the focus (any, without one) applies before the move. `None` while
+    /// the analysis is not there.
+    fn teachable(&self, key: DecisionKey) -> Option<bool> {
+        self.explanation(key)
+            .map(|e| e.teachable(self.settings.focus))
+    }
+
+    /// The stage shown for `key`, if any (D-49). Automatic teaching needs a
+    /// supported lesson (pedagogical eligibility), separate from the engine's
+    /// important mark: with level Important the situation shows up on its
+    /// own once the finished analysis marks the decision important and a
+    /// lesson applies; with every move the considerations, unless the
+    /// finished analysis shows that no lesson applies. Skipped advice stays
+    /// away until the next decision or a request.
     fn shown(&self, key: DecisionKey) -> Option<Stage> {
         let requested = self.requested.filter(|(k, _)| *k == key).map(|(_, s)| s);
         let automatic = match self.settings.level {
             CoachLevel::Off => return None,
+            _ if self.skipped == Some(key) => None,
             CoachLevel::OnRequest => None,
-            CoachLevel::Important => self
-                .explanation(key)
-                .is_some_and(|e| e.important)
-                .then_some(Stage::Situation),
-            CoachLevel::EveryMove => Some(Stage::Considerations),
+            CoachLevel::Important => (self.explanation(key).is_some_and(|e| e.important)
+                && self.teachable(key) == Some(true))
+            .then_some(Stage::Situation),
+            CoachLevel::EveryMove => {
+                (self.teachable(key) != Some(false)).then_some(Stage::Considerations)
+            }
         };
         requested.max(automatic).map(|s| s.min(self.top_stage()))
     }
@@ -439,7 +472,8 @@ impl CoachState {
         action: Action,
     ) -> Option<(Note, Option<LessonContent>)> {
         let r = review(e, action)?;
-        let out = (r.note(), r.lesson.clone());
+        let lesson = r.lesson_for(self.settings.focus).map(|t| t.content.clone());
+        let out = (r.note(), lesson);
         self.reviews.push((key, r));
         Some(out)
     }
@@ -492,7 +526,7 @@ impl CoachState {
         let mut reviews = self.reviews.clone();
         reviews.sort_by_key(|(k, _)| k.actions);
         let reviews: Vec<MoveReview> = reviews.into_iter().map(|(_, r)| r).collect();
-        Debriefing::Ready(moments(&reviews))
+        Debriefing::Ready(moments(&reviews, self.settings.focus))
     }
 
     pub(crate) fn job(&self, key: DecisionKey, view: PlayerView) -> CoachJob {
@@ -522,6 +556,7 @@ impl CoachState {
         let mut view = CoachView {
             settings: self.settings,
             help_available: false,
+            skippable: false,
             next_stage: None,
             analysing: false,
             advice: Advice::None,
@@ -538,16 +573,24 @@ impl CoachState {
         };
         let result = self.result(key);
         view.analysing = self.visible(key) && result.is_none();
+        let focus = self.settings.focus;
         view.advice = match self.shown(key) {
+            None if self.settings.level == CoachLevel::EveryMove
+                && self.skipped != Some(key)
+                && self.teachable(key) == Some(false) =>
+            {
+                Advice::NoLesson
+            }
             None => Advice::None,
             Some(stage) => match result.map(|r| &r.outcome) {
                 None => Advice::Computing,
-                Some(Ok(e)) if e.complete() => Advice::Ready(Box::new(hints(e, stage))),
-                Some(Ok(e)) => Advice::Provisional(Box::new(hints(e, stage))),
+                Some(Ok(e)) if e.complete() => Advice::Ready(Box::new(hints_for(e, stage, focus))),
+                Some(Ok(e)) => Advice::Provisional(Box::new(hints_for(e, stage, focus))),
                 Some(Err(reason)) => Advice::Unavailable(*reason),
             },
         };
         view.help_available = on;
+        view.skippable = on && view.advice != Advice::None;
         view.next_stage = self.next_stage(key).filter(|_| on);
         view.pending = self.pending.clone();
         view

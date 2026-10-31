@@ -68,7 +68,7 @@ What they do not claim:
 
 Limitations: Null has no Trumpf lesson. "Recent" is the trick in progress
 or the last completed trick, not exactly "since the seat's last card".
-The debriefing moments do not show lessons yet. The Trumpf sets do not
+Debriefing moments show their lesson since D-58. The Trumpf sets do not
 appear as a separate fact line in the considerations; `TrumpsOut` still
 does. The fixtures are in `skat-analysis/tests/exact_lessons.rs` and
 `skat-coach/tests/lessons.rs`; learner UAT is pending
@@ -185,8 +185,10 @@ and `skat-coach/tests/preplay.rs`; learner UAT is pending
 - **Important decision**: the analysis is complete, at least two options
   are compared, and a *natural* option is weak. Natural: every option
   except jump bids above the next bid value and Schneider/Schwarz
-  announcements.
-- **Warning**: only with a complete analysis and a weak chosen action.
+  announcements. An engine judgement only: automatic teaching also needs
+  pedagogical eligibility (D-58).
+- **Warning**: only with a complete analysis and a weak chosen action;
+  independent of lessons and focus.
 
 ## No telling ahead (D-49)
 
@@ -196,30 +198,26 @@ ranked `Explanation`. Each `RequestAdvice` reveals one more `Stage`:
 1. `Considerations`: objective, sure facts, likely inferences.
 2. `Situation`: the legal options in the view's order and a `Situation`
    (`Forced`, `OneStandsOut`, `SeveralEqual`, `Unclear` when the analysis
-   is incomplete) plus the important-decision mark. No option is named as
-   better.
+   is incomplete) plus the important-decision mark and one neutral
+   comparison question (`Hints::compare_question`, D-58), the same for
+   every option and ranking. No option is named as better.
 3. `Figures`: every option's estimate in the same neutral order, no
    judgement; only with "show figures" (otherwise stage 2 is the last).
 
 After the move `review` judges the chosen option; `MoveReview::note` is the
 short note (`Good`, `AboutEqual`, `SomewhatWeaker`, `ClearlyWeaker`,
-`Forced`, `Uncertain`). At the end of the game `moments` picks from the
-complete, not forced reviews at most `BAD_MOMENTS` (3) worse or weak
-choices losing at least `MOMENT_POINTS` (5 Seeger-Fabian points), by
-expected loss, and at most `GOOD_MOMENTS` (2) important
-decisions decided best or equivalent, by the loss of the costliest natural
-weak option avoided (the `trap`). Of these at most `PRIMARY_MOMENTS` (3)
-remain (D-52): the costliest bad one, the good one with the costliest trap,
-then the others by the same measures, ties in game order; they are shown
-in game order. The warning (`Warning`) carries only the chosen option and
-its loss.
+`Forced`, `Uncertain`). At the end of the game `moments` picks zero to
+three teachable moments (D-58, section below). The warning (`Warning`)
+carries only the chosen option and its loss.
 
 Each moment's summary names the trick and decision, the chosen action and
 the model's judgement as the model's ("the model rates it clearly lower
-than …"); for a good moment also the trap the model rates clearly lower,
-without claiming the player weighed it. Since no strategic mechanism is
-evidenced yet, every summary says so instead of turning score differences
-into a cause. The collapsed "analysis details" hold the comparison per
+than …"; for an unfinished analysis that there is no rating); for a good
+moment also the trap the model rates clearly lower, without claiming the
+player weighed it. Then come the lesson's checking questions and the
+sentence that the lesson does not explain the model's rating, so score
+differences never become a cause. The lesson's evidence and exceptions are
+a collapsed section of their own. The collapsed "analysis details" hold the comparison per
 metric with its party (winning chance, ranking value, declarer game
 points, throw-in chance), the model rating of each named option, the
 figures (only with "show figures"), what was known and inferred, and the
@@ -227,12 +225,65 @@ basis and assumptions (`MoveReview::basis`, `assumptions`). The summary
 never shows an estimate. After the game, a forced last move gets no note
 above the debriefing.
 
+## Focus and teachable moments (D-58)
+
+**Focus.** `CoachSettings::focus` is one optional `Concept`, one per
+catalogue lesson (`Concept::ALL`: hand structure, game value, proven void,
+remaining Trumpf, Abstich, partner overtaking). Only the player chooses it
+("Settings → Learning focus"); the coach diagnoses nothing. It stays for
+the next game until changed and never changes the game. With a focus:
+
+- hints (`hints_for`), the note after the move (`MoveReview::lesson_for`)
+  and the debriefing show the focus lesson when it applies, otherwise the
+  first lesson of the catalogue;
+- automatic teaching considers only the focus lesson.
+
+**Pedagogical eligibility.** `Explanation::teachable(focus)`: a supported
+lesson (of the focus) applies before the move. Only fact lessons can; they
+depend on the evidence, never on the ranking. It is separate from the
+engine's important mark (D-48) and from warnings. Automatic teaching needs
+it: level "important" shows stage 2 at decisions that are important *and*
+teachable; "every move" shows stage 1 where a lesson applies, otherwise the
+compact status `Advice::NoLesson` ("no checked lesson; hints on request")
+instead of invented hints. Asking always shows the stages.
+
+**Skip.** `Command::SkipAdvice` ("Hide") puts the advice of the current
+decision away until the next decision or a new request. It changes no
+game, setting, analysis or held action; a warning stays held. No question
+is ever forced; normal play never waits for the coach.
+
+**Moments.** `moments(reviews, focus)` returns zero to `PRIMARY_MOMENTS`
+(3) primary moments, shown in game order. Eligible: a decision with a
+choice (not forced) and a supported lesson; a score gap or an avoided
+trap alone is not. Fact lessons are exact, so a provisional analysis stays
+eligible, but is never rated (`MomentKind::Neutral`). Ranked, at most one
+moment per concept:
+
+1. the focus lesson;
+2. a complete analysis rating the choice clearly: `Good` (important,
+   best or equivalent, a costly natural option avoided) or `Bad` (worse or
+   weak, losing at least `MOMENT_POINTS`, 5 points);
+3. a mechanism lesson before a fact lesson;
+4. the larger loss or avoided trap;
+5. game order.
+
+There is no minimum of good or bad moments; a game without a lesson shows
+none and says so. The ranking is a product default to test with learners,
+not a validated optimum. Changing the focus after the game re-selects from
+the stored reviews without a new analysis. Fixtures:
+`skat-coach/tests/focus.rs`, `skat-app/tests/coach.rs`.
+
+Limits: concepts are the six shipped lessons; the debriefing does not
+repeat the trick or hand at the decision (historical context is #47); no
+progress or adaptation is stored.
+
 ## Session lifecycle (`skat-app`)
 
-- Levels (D-08, D-49): **off** (no hints, notes or debriefing, no help
-  action), **on request** (default; each `RequestAdvice` one stage),
-  **important** (stage 2 on its own when important, help action too),
-  **every move** (stage 1 on its own). Warning off by default (D-09),
+- Levels (D-08, D-49, D-58): **off** (no hints, notes or debriefing, no
+  help action), **on request** (default; each `RequestAdvice` one stage),
+  **important** (stage 2 on its own when important and teachable, help
+  action too), **every move** (stage 1 on its own where teachable, the
+  compact status elsewhere). Warning off by default (D-09),
   independent of the level; "show figures" (off by default, D-52) hides
   estimates but keeps the reasoning and exact facts.
 - With the level not off, every own decision is analysed for the note

@@ -12,7 +12,7 @@ use skat_app::{
     Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit, TableView, reizwerte,
 };
 
-use skat_app::coach_model::Stage;
+use skat_app::coach_model::{Concept, Stage};
 
 use crate::cards::{self, Deck};
 use crate::coach::{self, Style};
@@ -400,6 +400,14 @@ impl GrandCoachApp {
             .on_hover_text(self.t("setting-coach-warnings-description"));
         let label = self.t("setting-coach-figures");
         ui.checkbox(&mut settings.show_figures, label);
+        // One optional focus, chosen by the player only.
+        ui.label(self.t("setting-coach-focus"))
+            .on_hover_text(self.t("setting-coach-focus-description"));
+        let focuses = std::iter::once(None).chain(Concept::ALL.into_iter().map(Some));
+        for focus in focuses {
+            let label = coach::focus(&self.i18n, focus);
+            ui.radio_value(&mut settings.focus, focus, label);
+        }
         if settings != self.session.coach_settings() {
             self.set_coach(settings);
         }
@@ -428,6 +436,19 @@ impl GrandCoachApp {
             {
                 self.send(Command::RequestAdvice, now);
             }
+            // Help is optional: put it away until the next decision.
+            if coach.skippable && ui.button(self.t("button-coach-skip")).clicked() {
+                self.send(Command::SkipAdvice, now);
+            }
+        }
+        if let Some(f) = coach.settings.focus {
+            ui.label(
+                RichText::new(self.i18n.tf(
+                    "coach-focus-current",
+                    &[("focus", coach::concept(&self.i18n, f).into())],
+                ))
+                .weak(),
+            );
         }
         let view = &self.session.view();
         let coach = &view.coach;
@@ -470,6 +491,9 @@ impl GrandCoachApp {
             Advice::Ready(h) | Advice::Provisional(h) => {
                 lines.extend(coach::hints(i, view, h, figures));
             }
+            Advice::NoLesson => {
+                ui.label(RichText::new(i.t("coach-status-no-lesson")).weak());
+            }
             Advice::Unavailable(reason) => {
                 ui.label(coach::unavailable(i, *reason));
             }
@@ -481,6 +505,10 @@ impl GrandCoachApp {
                 show_lines(ui, &d.lines);
                 for (n, m) in d.moments.into_iter().enumerate() {
                     show_lines(ui, &m.summary);
+                    // The lesson's evidence, collapsed by default.
+                    egui::CollapsingHeader::new(&m.lesson_title)
+                        .id_salt(("moment_lesson", view.game_number, n))
+                        .show(ui, |ui| show_lines(ui, &m.lesson));
                     // Collapsed by default; its state is the window's only.
                     egui::CollapsingHeader::new(&details)
                         .id_salt(("coach-details", view.game_number, n))

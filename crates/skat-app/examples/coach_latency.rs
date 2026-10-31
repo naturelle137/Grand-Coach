@@ -75,6 +75,7 @@ fn main() {
                 level: CoachLevel::EveryMove,
                 warnings: false,
                 show_figures: true,
+                focus: None,
             }))
             .unwrap();
         loop {

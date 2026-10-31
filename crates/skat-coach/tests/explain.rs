@@ -15,10 +15,9 @@ use skat_analysis::lesson::{
 use skat_analysis::sampling::Place;
 use skat_analysis::{Analysis, Budget, Cancel, CardClass, Observation, Status, analyze, utility};
 use skat_coach::{
-    Amount, BAD_MOMENTS, Consideration, Decision, Explanation, GOOD_MOMENTS, Judgement,
-    MOMENT_POINTS, Moment, MomentKind, Note, Objective, PRIMARY_MOMENTS, Reason, Reliability, Role,
-    Situation, Stage, Teaching, Verdict, WEAK_POINTS, decision_seed, explain, hints,
-    lesson_content, moments, review, teach,
+    Amount, Concept, Consideration, Decision, Explanation, Judgement, MomentKind, Note, Objective,
+    Reason, Reliability, Role, Situation, Stage, Teaching, Verdict, WEAK_POINTS, decision_seed,
+    explain, hints, lesson_content, moments, review, teach,
 };
 use skat_core::{
     Action, Announcement, Card, CardSet, Deal, Follow, Game, GameType, PlayerView, Rank,
@@ -470,8 +469,11 @@ fn overbid_announcement_is_weak_and_important() {
     assert!(warning.chosen.gap >= WEAK_POINTS);
     assert!(e.important, "a natural option is weak");
 
-    // The debriefing: choosing the overbid game is a bad moment, avoiding
-    // it a good one; the caps hold however many moments there are.
+    // The debriefing: both choices teach the exact game-value lesson at
+    // the announcement. Choosing the overbid game is a bad moment, avoiding
+    // it a good one; one moment per concept, so only one remains: the trap
+    // is the costliest natural weak option, at least as costly as the
+    // overbid Karo game, and a tie goes to game order (the good one first).
     let bad = review(&e, karo).unwrap();
     assert_eq!(bad.note(), Note::ClearlyWeaker);
     let best = e.best().unwrap().action;
@@ -482,46 +484,29 @@ fn overbid_announcement_is_weak_and_important() {
             .as_ref()
             .is_some_and(|t| t.natural && t.gap >= WEAK_POINTS)
     );
-    let found = moments(&[good.clone(), bad.clone()]);
+    for r in [&good, &bad] {
+        assert_eq!(
+            r.lesson_for(None).map(|t| t.concept),
+            Some(Concept::GameValue)
+        );
+    }
+    let found = moments(&[good.clone(), bad.clone()], None);
+    assert_eq!(found.len(), 1, "one moment per concept");
     assert_eq!(
-        found.iter().map(|m| m.kind).collect::<Vec<_>>(),
-        [MomentKind::Good, MomentKind::Bad],
-        "game order"
+        (found[0].kind, found[0].concept),
+        (MomentKind::Good, Concept::GameValue)
     );
-    // At most three in total: the costliest bad, the best good, then the
-    // next bad one; all in game order.
-    let many: Vec<_> = (0..5).flat_map(|_| [good.clone(), bad.clone()]).collect();
-    let found = moments(&many);
-    let count = |found: &[Moment], k| found.iter().filter(|m| m.kind == k).count();
-    assert_eq!(found.len(), PRIMARY_MOMENTS);
-    assert_eq!(count(&found, MomentKind::Bad), 2);
-    assert_eq!(count(&found, MomentKind::Good), 1);
-    assert_eq!(
-        found.iter().map(|m| m.kind).collect::<Vec<_>>(),
-        [MomentKind::Good, MomentKind::Bad, MomentKind::Bad],
-        "ties in game order: reviews 0, 1 and 3"
-    );
-    // Only one kind: up to its own cap.
-    let only_bad = moments(&vec![bad.clone(); 5]);
-    assert_eq!(only_bad.len(), PRIMARY_MOMENTS.min(BAD_MOMENTS));
-    let only_good = moments(&vec![good.clone(); 5]);
-    assert_eq!(only_good.len(), GOOD_MOMENTS);
-    // A costlier bad moment later in the game wins its slot.
-    let mut costly = bad.clone();
-    costly.chosen.gap += 1.0;
-    let mut reviews = vec![bad.clone(); 3];
-    reviews.push(costly.clone());
-    let found = moments(&reviews);
-    assert_eq!(found.len(), 3);
-    assert_eq!(found[2].review, costly, "kept and shown in game order");
-    // A small loss gets the note only, no moment.
-    let mut small = bad.clone();
-    small.chosen.judgement = Judgement::Worse;
-    small.chosen.gap = MOMENT_POINTS - 0.5;
-    assert_eq!(small.note(), Note::SomewhatWeaker);
-    assert!(moments(&[small.clone()]).is_empty());
-    small.chosen.gap = MOMENT_POINTS;
-    assert_eq!(moments(&[small]).len(), 1);
+    assert_eq!(found[0].review, good);
+    // The other way round, the larger loss wins; a tie goes to game order.
+    let trap = good.trap.as_ref().unwrap().gap;
+    assert!(trap >= bad.chosen.gap);
+    let found = moments(&[bad.clone(), good.clone()], None);
+    let expected = if trap > bad.chosen.gap {
+        MomentKind::Good
+    } else {
+        MomentKind::Bad
+    };
+    assert_eq!(found[0].kind, expected);
 }
 
 #[test]
