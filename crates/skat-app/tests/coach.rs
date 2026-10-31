@@ -745,13 +745,20 @@ fn debriefing_shows_teachable_moments_after_the_game() {
         s.view().coach.debriefing,
         Some(Debriefing::Ready(m)) if m.iter().all(|m| !m.focused)
     ));
-    // The next game starts afresh; explicit choices stay.
+    // The next game starts afresh; explicit choices, the focus included,
+    // stay.
+    s.execute(Command::SetCoach(CoachSettings {
+        focus,
+        ..s.coach_settings()
+    }))
+    .unwrap();
     if !s.view().series_finished {
         s.execute(Command::NextGame).unwrap();
         let coach = s.view().coach;
         assert_eq!((coach.last_move, coach.debriefing), (None, None));
         assert!(coach.settings.show_figures);
         assert_eq!(coach.settings.level, CoachLevel::EveryMove);
+        assert_eq!(coach.settings.focus, focus);
     }
 }
 
