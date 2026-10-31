@@ -11,6 +11,13 @@ runner and window responsiveness is tested headlessly
 ([coach.md](coach.md#latency)); interactive smoke tests in the playable
 application are still open.
 
+A planned didactic follow-up to the implemented coach is specified in
+[coach-didactics.md](coach-didactics.md), with bounded assignments in
+[coach-work-packages.md](coach-work-packages.md) and tracking issue
+[#39](https://github.com/naturelle137/grand-coach/issues/39). Readable review
+comes first, verified lessons next, practice/progress afterwards. The work
+refines M5–M8 and does not close their existing acceptance gates.
+
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.
 No individual tasks here.
