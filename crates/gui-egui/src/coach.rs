@@ -5,12 +5,14 @@
 //! `skat-coach` (via `skat-app`) into lines. Before the move nothing ranks
 //! or labels an option. Estimated figures (chances, expected points,
 //! uncertainty, expected card counts) appear only with "show figures";
-//! exact facts such as counted cards, Augen and bid values always do.
+//! exact facts such as counted cards, Augen and bid values always do. A
+//! debriefing moment shows a short summary without any estimate; the
+//! comparison, figures, facts and assumptions are its details (D-52).
 
 use skat_app::coach_model::{
     Amount, Assumption, Basis, CardClass, ComparedOption, Consideration, Decision, Estimate,
-    Follow, Hints, Judgement, Moment, MomentKind, Note, Objective, Observation, Place, Reason,
-    Role, Situation, Stage, Warning,
+    Follow, Hints, Judgement, Moment, MomentKind, MoveReview, Note, Objective, Observation, Place,
+    Reason, Role, Situation, Stage, Warning,
 };
 use skat_app::{Action, Contract, Debriefing, LastMove, PlayerId, Seat, TableView, Unavailable};
 
@@ -297,13 +299,18 @@ fn reason(i18n: &I18n, other: &str, r: Reason, figures: bool) -> String {
     }
 }
 
-/// The figures of one estimate.
-fn metrics(i18n: &I18n, role: Role, e: &Estimate) -> String {
-    let party = i18n.t(match role {
+/// Whose winning chance an estimate gives.
+fn party(i18n: &I18n, role: Role) -> String {
+    i18n.t(match role {
         Role::Bidder => "coach-party-own",
         Role::Declarer => "coach-party-declarer",
         Role::Defender => "coach-party-defenders",
-    });
+    })
+}
+
+/// The figures of one estimate.
+fn metrics(i18n: &I18n, role: Role, e: &Estimate) -> String {
+    let party = party(i18n, role);
     let mut out = i18n.tf(
         "coach-metric-win",
         &[
@@ -498,9 +505,29 @@ pub fn note(i18n: &I18n, last: &LastMove) -> Line {
     )
 }
 
-/// Reasons of `o` against the option it was compared with.
-fn reasons(
+/// What a reason compares, with the party it is counted for.
+fn metric_label(i18n: &I18n, role: Role, r: Reason) -> Option<String> {
+    Some(match r {
+        Reason::WinChance { .. } => i18n.tf(
+            "coach-metric-label-win",
+            &[("party", party(i18n, role).into())],
+        ),
+        Reason::Points { .. } => i18n.t(if role == Role::Defender {
+            "coach-metric-label-points-defender"
+        } else {
+            "coach-metric-label-points"
+        }),
+        Reason::DeclarerPoints { .. } => i18n.t("coach-metric-label-declarer"),
+        Reason::ThrownIn { .. } => i18n.t("coach-metric-label-thrown-in"),
+        Reason::SameValue | Reason::WithinUncertainty => return None,
+    })
+}
+
+/// The model comparison of `o` with the option it was compared with, each
+/// reason under the name of its metric.
+fn comparison(
     i18n: &I18n,
+    role: Role,
     o: &ComparedOption,
     name: impl Fn(Action) -> String,
     figures: bool,
@@ -509,117 +536,173 @@ fn reasons(
         return Vec::new();
     };
     let other = name(other);
-    o.reasons
-        .iter()
-        .map(|&r| {
-            line(
-                format!("• {}", reason(i18n, &other, r, figures)),
-                Style::Normal,
-            )
-        })
-        .collect()
+    let mut out = vec![line(
+        i18n.tf(
+            "coach-details-comparison",
+            &[
+                ("action", name(o.action).into()),
+                ("other", other.clone().into()),
+            ],
+        ),
+        Style::Strong,
+    )];
+    out.extend(o.reasons.iter().map(|&r| {
+        let text = reason(i18n, &other, r, figures);
+        let text = match metric_label(i18n, role, r) {
+            Some(label) => format!("• {label}: {text}"),
+            None => format!("• {text}"),
+        };
+        line(text, Style::Normal)
+    }));
+    out
 }
 
-/// One moment of the debriefing.
-fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> Vec<Line> {
+/// The model's judgement of the chosen option, qualified as the model's.
+fn chosen(i18n: &I18n, r: &MoveReview, name: &dyn Fn(Action) -> String) -> String {
+    let action = name(r.chosen.action);
+    let best = r.best.as_ref().map(|b| name(b.action));
+    let id = match (r.chosen.judgement, &best) {
+        (Judgement::Best, _) => "coach-moment-chosen-best",
+        (Judgement::Equivalent, Some(_)) => "coach-moment-chosen-equivalent",
+        (Judgement::Worse, Some(_)) => "coach-moment-chosen-worse",
+        (Judgement::Weak, Some(_)) => "coach-moment-chosen-weak",
+        _ => "coach-moment-chosen-unrated",
+    };
+    i18n.tf(
+        id,
+        &[
+            ("action", action.into()),
+            ("best", best.unwrap_or_default().into()),
+        ],
+    )
+}
+
+/// One moment of the debriefing: a short summary and its analysis details.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MomentText {
+    /// What was decided and how the model rates it; never an estimate.
+    pub summary: Vec<Line>,
+    /// Comparison by metric, figures (if shown), what was known and the
+    /// model assumptions; collapsed by default.
+    pub details: Vec<Line>,
+}
+
+/// One moment of the debriefing. The summary names the decision, the
+/// choice and the model's judgement and says honestly that no strategic
+/// explanation exists yet: the score differences of the reasons are no
+/// cause and stay in the details (D-52).
+fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentText {
     let r = &m.review;
     let name = |a: Action| action_at(i18n, r.bid, r.hand_game, a);
     let mut what = decision(i18n, r.decision);
     if let Some(trick) = r.trick {
         what = format!(
-            "{what} · {}",
+            "{} · {what}",
             i18n.tf("coach-moment-trick", &[("trick", trick.into())])
         );
     }
-    let mut out = vec![line(
-        i18n.tf(
-            match m.kind {
-                MomentKind::Good => "coach-moment-good",
-                MomentKind::Bad => "coach-moment-bad",
-            },
-            &[("decision", what.into())],
-        ),
-        Style::Heading,
-    )];
-    out.push(line(
-        i18n.tf(
-            "coach-moment-chosen",
-            &[
-                ("action", name(r.chosen.action).into()),
-                ("judgement", judgement(i18n, r.chosen.judgement).into()),
-            ],
-        ),
-        Style::Strong,
-    ));
-    let figure_line = |o: &ComparedOption| {
-        o.estimate.filter(|_| figures).map(|e| {
-            line(
-                format!("{}: {}", name(o.action), metrics(i18n, r.role, &e)),
-                Style::Weak,
-            )
-        })
+    let mut summary = vec![
+        line(what, Style::Heading),
+        line(chosen(i18n, r, &name), Style::Strong),
+    ];
+    let trap = r.trap.as_ref().filter(|_| m.kind == MomentKind::Good);
+    if let Some(trap) = trap {
+        summary.push(line(
+            i18n.tf("coach-moment-trap", &[("trap", name(trap.action).into())]),
+            Style::Normal,
+        ));
+    }
+    summary.push(line(i18n.t("coach-moment-no-reason"), Style::Normal));
+
+    let mut details = Vec::new();
+    let compared = match m.kind {
+        MomentKind::Bad => Some(&r.chosen),
+        MomentKind::Good => trap,
     };
-    match m.kind {
-        MomentKind::Bad => {
-            if let Some(best) = &r.best {
-                out.push(line(
-                    i18n.tf("coach-moment-better", &[("best", name(best.action).into())]),
-                    Style::Normal,
-                ));
-                out.extend(reasons(i18n, &r.chosen, name, figures));
-                out.extend(figure_line(&r.chosen));
-                out.extend(figure_line(best));
-            }
+    if let Some(o) = compared {
+        details.extend(comparison(i18n, r.role, o, name, figures));
+    }
+    // The model's rating of each option named, with its figures if shown.
+    let mut shown = Vec::new();
+    for o in [Some(&r.chosen), r.best.as_ref(), trap]
+        .into_iter()
+        .flatten()
+    {
+        if shown.contains(&o.action) {
+            continue;
         }
-        MomentKind::Good => {
-            if let Some(trap) = &r.trap {
-                out.push(line(
-                    i18n.tf("coach-moment-trap", &[("trap", name(trap.action).into())]),
-                    Style::Normal,
-                ));
-                out.extend(reasons(i18n, trap, name, figures));
-                if figures {
-                    out.push(line(
-                        i18n.tf(
-                            "coach-moment-trap-loss",
-                            &[("points", format!("{:.1}", trap.gap).into())],
-                        ),
-                        Style::Weak,
-                    ));
-                }
-            }
+        shown.push(o.action);
+        details.push(line(
+            i18n.tf(
+                "coach-details-rating",
+                &[
+                    ("action", name(o.action).into()),
+                    ("judgement", judgement(i18n, o.judgement).into()),
+                ],
+            ),
+            Style::Normal,
+        ));
+        if let Some(e) = o.estimate.filter(|_| figures) {
+            details.push(line(metrics(i18n, r.role, &e), Style::Weak));
         }
     }
-    let knew = considerations(i18n, view, &r.considerations, figures);
-    if !knew.is_empty() {
-        out.push(line(i18n.t("coach-moment-knew"), Style::Strong));
-        // One level below the moment: no section headings of their own.
-        out.extend(knew.into_iter().filter(|l| l.style != Style::Heading));
+    if let Some(trap) = trap.filter(|_| figures) {
+        details.push(line(
+            i18n.tf(
+                "coach-moment-trap-loss",
+                &[("points", format!("{:.1}", trap.gap).into())],
+            ),
+            Style::Weak,
+        ));
     }
-    out
+    // One level below the moment: sections as emphasised lines.
+    let below = |l: Line| match l.style {
+        Style::Heading => line(l.text, Style::Strong),
+        _ => l,
+    };
+    details.extend(
+        considerations(i18n, view, &r.considerations, figures)
+            .into_iter()
+            .map(below),
+    );
+    details.extend(
+        basis(i18n, &r.basis, &r.assumptions, figures)
+            .into_iter()
+            .map(below),
+    );
+    MomentText { summary, details }
 }
 
-/// The end-of-game debriefing, as lines (D-49).
-pub fn debriefing(i18n: &I18n, view: &TableView, d: &Debriefing, figures: bool) -> Vec<Line> {
-    let mut out = vec![line(i18n.t("coach-debriefing-title"), Style::Heading)];
+/// The end-of-game debriefing (D-49): heading and status lines, then at
+/// most three moments.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DebriefingText {
+    /// Heading and status.
+    pub lines: Vec<Line>,
+    /// The moments in game order.
+    pub moments: Vec<MomentText>,
+}
+
+/// The end-of-game debriefing (D-49).
+pub fn debriefing(i18n: &I18n, view: &TableView, d: &Debriefing, figures: bool) -> DebriefingText {
+    let mut lines = vec![line(i18n.t("coach-debriefing-title"), Style::Heading)];
+    let mut moments = Vec::new();
     match d {
-        Debriefing::Computing { remaining } => out.push(line(
+        Debriefing::Computing { remaining } => lines.push(line(
             i18n.tf(
                 "coach-debriefing-computing",
                 &[("count", (*remaining).into())],
             ),
             Style::Weak,
         )),
-        Debriefing::Ready(moments) if moments.is_empty() => {
-            out.push(line(i18n.t("coach-debriefing-none"), Style::Normal));
+        Debriefing::Ready(all) if all.is_empty() => {
+            lines.push(line(i18n.t("coach-debriefing-none"), Style::Normal));
         }
-        Debriefing::Ready(moments) => {
-            for m in moments {
-                out.extend(moment(i18n, view, m, figures));
-            }
+        Debriefing::Ready(all) => {
+            moments = all.iter().map(|m| moment(i18n, view, m, figures)).collect();
         }
     }
-    out
+    DebriefingText { lines, moments }
 }
 
 /// The warning before a weak action, as lines. It names no alternative
@@ -656,8 +739,8 @@ mod tests {
     use crate::i18n::Language;
     use skat_app::coach_model::{self as model, Explanation};
     use skat_app::{
-        Budget, CoachLevel, CoachSettings, Command, Level, Opponents, Phase, SeriesLength, Session,
-        SessionConfig,
+        Budget, Card, CoachLevel, CoachSettings, Command, Level, Opponents, Phase, Rank, Seat,
+        SeriesLength, Session, SessionConfig, Suit,
     };
 
     /// Explanations of the human's card-play decisions in a seeded series.
@@ -726,7 +809,22 @@ mod tests {
             .filter_map(|&a| model::review(e, a))
             .collect();
         let moments = model::moments(&reviews);
-        out.push(debriefing(i18n, view, &Debriefing::Ready(moments), figures));
+        out.push(flat(&debriefing(
+            i18n,
+            view,
+            &Debriefing::Ready(moments),
+            figures,
+        )));
+        out
+    }
+
+    /// Every line of a debriefing, details included.
+    fn flat(d: &DebriefingText) -> Vec<Line> {
+        let mut out = d.lines.clone();
+        for m in &d.moments {
+            out.extend(m.summary.iter().cloned());
+            out.extend(m.details.iter().cloned());
+        }
         out
     }
 
@@ -802,5 +900,316 @@ mod tests {
             }
         }
         assert!(moments > 0, "some debriefing was rendered");
+    }
+
+    // ------------------------------------------------------------------
+    // Debriefing fixtures (D-52). The decision: trick 5, the human defends;
+    // Kreuz-Bube is best, Pik-Sieben a natural trap clearly lower, the
+    // Herz-Sieben in between. The figures are invented for the fixture
+    // only; what matters is where they may appear.
+
+    const BEST: Card = Card::new(Suit::Kreuz, Rank::Bube);
+    const MIDDLE: Card = Card::new(Suit::Herz, Rank::Sieben);
+    const TRAP: Card = Card::new(Suit::Pik, Rank::Sieben);
+
+    fn estimate(win_chance: f64, expected_score: f64) -> model::Estimate {
+        model::Estimate {
+            win_chance,
+            expected_score,
+            expected_game_points: -2.0 * expected_score,
+            thrown_in: 0.0,
+            score_std_error: 1.5,
+            samples: 24,
+            exact: false,
+        }
+    }
+
+    fn option(card: Card, judgement: Judgement, gap: f64, reasons: Vec<Reason>) -> ComparedOption {
+        let e = match card {
+            BEST => estimate(0.62, 21.4),
+            MIDDLE => estimate(0.55, 15.4),
+            _ => estimate(0.31, 7.1),
+        };
+        ComparedOption {
+            action: Action::Play(card),
+            natural: true,
+            judgement,
+            estimate: Some(e),
+            value: Some(e.expected_score),
+            gap,
+            margin: 3.0,
+            compared_with: Some(Action::Play(if card == BEST { MIDDLE } else { BEST })),
+            reasons,
+        }
+    }
+
+    fn trap() -> ComparedOption {
+        option(
+            TRAP,
+            Judgement::Weak,
+            14.3,
+            vec![
+                Reason::WinChance {
+                    this: 0.31,
+                    other: 0.62,
+                },
+                Reason::Points {
+                    this: 7.1,
+                    other: 21.4,
+                },
+            ],
+        )
+    }
+
+    /// The decision with `chosen` played.
+    fn fixture(chosen: ComparedOption) -> model::MoveReview {
+        model::MoveReview {
+            decision: Decision::Card,
+            role: Role::Defender,
+            status: model::Status::Complete,
+            bid: 18,
+            hand_game: Some(false),
+            trick: Some(5),
+            important: true,
+            forced: false,
+            considerations: vec![
+                Consideration::Known(Observation::TrumpsOut { count: 4 }),
+                Consideration::Inferred(model::Inferred {
+                    inference: model::Inference {
+                        holder: Place::Seat(Seat::Hinterhand),
+                        class: CardClass::Trumps,
+                        expected: 1.2,
+                        min: 0,
+                        max: 3,
+                        certain: false,
+                    },
+                    amount: Amount::AboutOne,
+                }),
+            ],
+            chosen,
+            best: Some(option(BEST, Judgement::Best, 0.0, Vec::new())),
+            trap: Some(trap()),
+            basis: model::Basis {
+                finished: 24,
+                planned: 24,
+                enumerated: false,
+                effective_samples: 20.0,
+            },
+            assumptions: vec![Assumption::UniformHiddenCards, Assumption::DoubleDummyPlay],
+        }
+    }
+
+    fn good() -> model::MoveReview {
+        fixture(option(BEST, Judgement::Best, 0.0, Vec::new()))
+    }
+
+    fn equivalent() -> model::MoveReview {
+        let reasons = vec![Reason::WithinUncertainty];
+        fixture(option(MIDDLE, Judgement::Equivalent, 0.5, reasons))
+    }
+
+    fn weak() -> model::MoveReview {
+        fixture(trap())
+    }
+
+    fn worse() -> model::MoveReview {
+        let reasons = vec![Reason::Points {
+            this: 15.4,
+            other: 21.4,
+        }];
+        fixture(option(MIDDLE, Judgement::Worse, 6.0, reasons))
+    }
+
+    fn uncertain() -> model::MoveReview {
+        model::MoveReview {
+            status: model::Status::BudgetExhausted,
+            ..weak()
+        }
+    }
+
+    fn forced() -> model::MoveReview {
+        model::MoveReview {
+            forced: true,
+            ..good()
+        }
+    }
+
+    fn table() -> TableView {
+        Session::new(SessionConfig::default()).view()
+    }
+
+    fn ready(reviews: &[model::MoveReview]) -> Debriefing {
+        Debriefing::Ready(model::moments(reviews))
+    }
+
+    /// Estimated figures of the fixture, as the frontend formats them.
+    const ESTIMATES: [&str; 8] = [
+        "62 %", "55 %", "31 %", "+21.4", "+15.4", "+7.1", "14.3", "1.2",
+    ];
+
+    fn assert_no_estimates(text: &str) {
+        for figure in ESTIMATES {
+            assert!(!text.contains(figure), "{figure} in {text}");
+        }
+        assert!(!text.contains('%') && !text.contains('±'), "{text}");
+    }
+
+    #[test]
+    fn fixture_notes_follow_the_judgement() {
+        let notes =
+            [good(), equivalent(), worse(), weak(), uncertain(), forced()].map(|r| r.note());
+        assert_eq!(
+            notes,
+            [
+                Note::Good,
+                Note::AboutEqual,
+                Note::SomewhatWeaker,
+                Note::ClearlyWeaker,
+                Note::Uncertain,
+                Note::Forced,
+            ]
+        );
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            let text = |note| {
+                let last = LastMove {
+                    action: Action::Play(MIDDLE),
+                    bid: 18,
+                    hand_game: Some(false),
+                    note: Some(note),
+                };
+                super::note(&i18n, &last).text
+            };
+            assert!(text(Note::Forced).contains(&i18n.t("coach-note-forced")));
+            assert!(text(Note::Uncertain).contains(&i18n.t("coach-note-uncertain")));
+        }
+    }
+
+    #[test]
+    fn no_moments_says_so() {
+        let view = table();
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            for reviews in [vec![], vec![uncertain(), forced()]] {
+                let d = debriefing(&i18n, &view, &ready(&reviews), true);
+                assert!(d.moments.is_empty());
+                assert_eq!(d.lines.len(), 2);
+                assert_eq!(d.lines[1].text, i18n.t("coach-debriefing-none"));
+            }
+        }
+    }
+
+    #[test]
+    fn one_weak_moment_reads_as_a_model_judgement_with_an_honest_fallback() {
+        let view = table();
+        let d = debriefing(&I18n::new(Language::De), &view, &ready(&[weak()]), false);
+        assert_eq!(d.moments.len(), 1);
+        let summary: Vec<&str> = d.moments[0]
+            .summary
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                "Stich 5 · Karte spielen",
+                "Du hast Pik-Sieben gewählt. Das Modell bewertet das deutlich niedriger als Kreuz-Bube.",
+                "Eine strategische Begründung liegt noch nicht vor – nur der Modellvergleich (Analysedetails).",
+            ]
+        );
+        let d = debriefing(&I18n::new(Language::En), &view, &ready(&[weak()]), false);
+        let summary: Vec<&str> = d.moments[0]
+            .summary
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                "Trick 5 · Play a card",
+                "You chose Seven of Spades. The model rates it clearly lower than Jack of Clubs.",
+                "No strategic explanation is available yet – only the model's comparison (analysis details).",
+            ]
+        );
+    }
+
+    #[test]
+    fn good_and_equivalent_moments_name_the_trap_without_claiming_it_was_considered() {
+        let view = table();
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            for (review, played, id) in [
+                (good(), BEST, "coach-moment-chosen-best"),
+                (equivalent(), MIDDLE, "coach-moment-chosen-equivalent"),
+            ] {
+                let d = debriefing(&i18n, &view, &ready(&[review]), false);
+                assert_eq!(d.moments.len(), 1, "{id}");
+                let m = &d.moments[0];
+                let name = |c| text::card(&i18n, c);
+                let chosen = i18n.tf(
+                    id,
+                    &[("action", name(played).into()), ("best", name(BEST).into())],
+                );
+                let trap = i18n.tf("coach-moment-trap", &[("trap", name(TRAP).into())]);
+                let texts: Vec<&str> = m.summary.iter().map(|l| l.text.as_str()).collect();
+                assert_eq!(texts[1..3], [chosen.as_str(), trap.as_str()]);
+                assert_eq!(texts[3], i18n.t("coach-moment-no-reason"));
+            }
+        }
+    }
+
+    #[test]
+    fn many_moments_keep_three_summaries_without_estimates() {
+        let view = table();
+        let all = [good(), equivalent(), worse(), weak(), uncertain(), forced()];
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            for figures in [false, true] {
+                let d = debriefing(&i18n, &view, &ready(&all), figures);
+                // The costliest bad (weak), the best good (good, first of
+                // two equal traps), the next bad (worse); in game order.
+                assert_eq!(d.moments.len(), 3);
+                let chosen: Vec<String> = d
+                    .moments
+                    .iter()
+                    .map(|m| m.summary[1].text.clone())
+                    .collect();
+                let name = |c| text::card(&i18n, c);
+                assert!(chosen[0].contains(&name(BEST)), "{chosen:?}");
+                assert!(chosen[1].contains(&name(MIDDLE)), "{chosen:?}");
+                assert!(chosen[2].contains(&name(TRAP)), "{chosen:?}");
+                for m in &d.moments {
+                    // Never an estimate in the summary, figures or not.
+                    assert_no_estimates(&joined(&m.summary));
+                    let details = joined(&m.details);
+                    // Party and metric labels, ratings and assumptions.
+                    assert!(details.contains(&i18n.t("coach-assumption-uniform")));
+                    assert!(details.contains(&i18n.t("coach-assumption-double-dummy")));
+                    assert!(details.contains(&i18n.t("coach-section-facts")));
+                    assert!(
+                        details.contains(&i18n.tf("coach-fact-trumps-out", &[("count", 4.into())]))
+                    );
+                    assert!(details.contains(&i18n.tf(
+                        "coach-details-rating",
+                        &[
+                            ("action", name(BEST).into()),
+                            ("judgement", judgement(&i18n, Judgement::Best).into()),
+                        ],
+                    )));
+                    assert!(details.contains(&i18n.t("coach-metric-label-points-defender")));
+                    if figures {
+                        assert!(details.contains("62 %") && details.contains("+21.4"));
+                        assert!(details.contains(&i18n.t("coach-party-defenders")));
+                    } else {
+                        assert_no_estimates(&details);
+                    }
+                }
+                let weak = joined(&d.moments[2].details);
+                assert!(weak.contains(&i18n.tf(
+                    "coach-metric-label-win",
+                    &[("party", i18n.t("coach-party-defenders").into())],
+                )));
+            }
+        }
     }
 }

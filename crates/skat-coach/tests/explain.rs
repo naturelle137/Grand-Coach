@@ -12,8 +12,8 @@ use skat_analysis::sampling::Place;
 use skat_analysis::{Analysis, Budget, Cancel, CardClass, Observation, Status, analyze, utility};
 use skat_coach::{
     Amount, BAD_MOMENTS, Consideration, Decision, Explanation, GOOD_MOMENTS, Judgement,
-    MOMENT_POINTS, MomentKind, Note, Objective, Reason, Role, Situation, Stage, Verdict,
-    WEAK_POINTS, decision_seed, explain, hints, moments, review,
+    MOMENT_POINTS, Moment, MomentKind, Note, Objective, PRIMARY_MOMENTS, Reason, Role, Situation,
+    Stage, Verdict, WEAK_POINTS, decision_seed, explain, hints, moments, review,
 };
 use skat_core::{
     Action, Announcement, Card, CardSet, Deal, Follow, Game, GameType, PlayerView, Rank,
@@ -444,11 +444,32 @@ fn overbid_announcement_is_weak_and_important() {
         [MomentKind::Good, MomentKind::Bad],
         "game order"
     );
+    // At most three in total: the costliest bad, the best good, then the
+    // next bad one; all in game order.
     let many: Vec<_> = (0..5).flat_map(|_| [good.clone(), bad.clone()]).collect();
     let found = moments(&many);
-    let count = |k| found.iter().filter(|m| m.kind == k).count();
-    assert_eq!(count(MomentKind::Bad), BAD_MOMENTS);
-    assert_eq!(count(MomentKind::Good), GOOD_MOMENTS);
+    let count = |found: &[Moment], k| found.iter().filter(|m| m.kind == k).count();
+    assert_eq!(found.len(), PRIMARY_MOMENTS);
+    assert_eq!(count(&found, MomentKind::Bad), 2);
+    assert_eq!(count(&found, MomentKind::Good), 1);
+    assert_eq!(
+        found.iter().map(|m| m.kind).collect::<Vec<_>>(),
+        [MomentKind::Good, MomentKind::Bad, MomentKind::Bad],
+        "ties in game order: reviews 0, 1 and 3"
+    );
+    // Only one kind: up to its own cap.
+    let only_bad = moments(&vec![bad.clone(); 5]);
+    assert_eq!(only_bad.len(), PRIMARY_MOMENTS.min(BAD_MOMENTS));
+    let only_good = moments(&vec![good.clone(); 5]);
+    assert_eq!(only_good.len(), GOOD_MOMENTS);
+    // A costlier bad moment later in the game wins its slot.
+    let mut costly = bad.clone();
+    costly.chosen.gap += 1.0;
+    let mut reviews = vec![bad.clone(); 3];
+    reviews.push(costly.clone());
+    let found = moments(&reviews);
+    assert_eq!(found.len(), 3);
+    assert_eq!(found[2].review, costly, "kept and shown in game order");
     // A small loss gets the note only, no moment.
     let mut small = bad.clone();
     small.chosen.judgement = Judgement::Worse;

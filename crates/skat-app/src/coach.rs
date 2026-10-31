@@ -52,7 +52,7 @@ pub struct CoachSettings {
     /// level; it also works with the level off.
     pub warnings: bool,
     /// Show numerical estimates; without them the frontend shows only the
-    /// verbal reasoning.
+    /// verbal reasoning and exact facts. Off by default (D-52).
     pub show_figures: bool,
 }
 
@@ -61,7 +61,7 @@ impl Default for CoachSettings {
         CoachSettings {
             level: CoachLevel::OnRequest,
             warnings: false,
-            show_figures: true,
+            show_figures: false,
         }
     }
 }
@@ -240,7 +240,8 @@ pub enum Debriefing {
         /// Decisions left.
         remaining: u32,
     },
-    /// The particularly good and bad moments, in game order; may be empty.
+    /// At most three particularly good and bad moments, in game order;
+    /// may be empty.
     Ready(Vec<Moment>),
 }
 
@@ -260,7 +261,9 @@ pub struct CoachView {
     pub advice: Advice,
     /// An action held back by the warning.
     pub pending: Option<Pending>,
-    /// The note on the human's last move in this game.
+    /// The note on the human's last move in this game; once the game is
+    /// over, not if that move was forced (it adds nothing to the
+    /// debriefing).
     pub last_move: Option<LastMove>,
     /// The debriefing, once the game is over.
     pub debriefing: Option<Debriefing>,
@@ -511,7 +514,7 @@ impl CoachState {
             last_move: self
                 .last_move
                 .as_ref()
-                .filter(|_| on)
+                .filter(|(_, m)| on && !(game_over && m.note == Some(Note::Forced)))
                 .map(|(_, m)| m.clone()),
             debriefing: (on && game_over).then(|| self.debriefing()),
         };

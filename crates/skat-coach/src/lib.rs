@@ -55,6 +55,10 @@ pub const BAD_MOMENTS: usize = 3;
 /// At most this many good moments in the end-of-game debriefing.
 pub const GOOD_MOMENTS: usize = 2;
 
+/// At most this many moments in the end-of-game debriefing in total
+/// (interim stable subset, see [`moments`]).
+pub const PRIMARY_MOMENTS: usize = 3;
+
 /// The kind of decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -493,6 +497,10 @@ pub struct MoveReview {
     pub best: Option<ComparedOption>,
     /// The costliest natural weak option, which a good decision avoided.
     pub trap: Option<ComparedOption>,
+    /// What the estimates rest on.
+    pub basis: Basis,
+    /// Model assumptions behind the estimates.
+    pub assumptions: Vec<Assumption>,
 }
 
 impl MoveReview {
@@ -537,6 +545,8 @@ pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
         chosen,
         best: e.best().cloned(),
         trap,
+        basis: e.basis,
+        assumptions: e.assumptions.clone(),
     })
 }
 
@@ -565,6 +575,12 @@ pub struct Moment {
 /// at least [`MOMENT_POINTS`]) and the
 /// [`GOOD_MOMENTS`] important decisions that avoided the costliest trap.
 /// Only complete analyses count.
+///
+/// Of these at most [`PRIMARY_MOMENTS`] remain, taken in this order: the
+/// costliest bad moment, the good moment with the costliest trap, then the
+/// other bad and good moments by the same measures (ties in game order).
+/// So a game with both kinds shows both. Interim rule until moments are
+/// chosen by teaching concept (`docs/coach-didactics.md`).
 pub fn moments(reviews: &[MoveReview]) -> Vec<Moment> {
     let complete = |r: &&MoveReview| r.status == Status::Complete && !r.forced;
     let mut bad: Vec<(usize, &MoveReview)> = reviews
@@ -596,10 +612,15 @@ pub fn moments(reviews: &[MoveReview]) -> Vec<Moment> {
         .collect();
     good.sort_by(|a, b| avoided(b.1).total_cmp(&avoided(a.1)).then(a.0.cmp(&b.0)));
     good.truncate(GOOD_MOMENTS);
-    let mut out: Vec<(usize, Moment)> = bad
+    let mut bad = bad.into_iter().map(|(i, r)| (i, MomentKind::Bad, r));
+    let mut good = good.into_iter().map(|(i, r)| (i, MomentKind::Good, r));
+    let costliest = [bad.next(), good.next()];
+    let mut out: Vec<(usize, Moment)> = costliest
         .into_iter()
-        .map(|(i, r)| (i, MomentKind::Bad, r))
-        .chain(good.into_iter().map(|(i, r)| (i, MomentKind::Good, r)))
+        .flatten()
+        .chain(bad)
+        .chain(good)
+        .take(PRIMARY_MOMENTS)
         .map(|(i, kind, r)| {
             (
                 i,

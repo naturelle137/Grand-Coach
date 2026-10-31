@@ -434,13 +434,12 @@ impl GrandCoachApp {
         let i = &self.i18n;
         let figures = coach.settings.show_figures;
         ui.separator();
+        let note = coach.last_move.as_ref().map(|last| coach::note(i, last));
         let mut lines = Vec::new();
-        if let Some(last) = &coach.last_move {
-            lines.push(coach::note(i, last));
-        }
-        if let Some(d) = &coach.debriefing {
-            lines.extend(coach::debriefing(i, view, d, figures));
-        }
+        let debriefing = coach
+            .debriefing
+            .as_ref()
+            .map(|d| coach::debriefing(i, view, d, figures));
         match &coach.advice {
             Advice::None if coach.analysing && human => {
                 ui.horizontal(|ui| {
@@ -468,25 +467,20 @@ impl GrandCoachApp {
                 ui.label(coach::unavailable(i, *reason));
             }
         }
+        let details = i.t("coach-details");
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for line in lines {
-                let text = RichText::new(line.text);
-                match line.style {
-                    Style::Heading => {
-                        ui.add_space(4.0);
-                        ui.label(text.strong().size(15.0));
-                    }
-                    Style::Strong => {
-                        ui.label(text.strong());
-                    }
-                    Style::Normal => {
-                        ui.label(text);
-                    }
-                    Style::Weak => {
-                        ui.label(text.weak().small());
-                    }
+            show_lines(ui, note.as_slice());
+            if let Some(d) = debriefing {
+                show_lines(ui, &d.lines);
+                for (n, m) in d.moments.into_iter().enumerate() {
+                    show_lines(ui, &m.summary);
+                    // Collapsed by default; its state is the window's only.
+                    egui::CollapsingHeader::new(&details)
+                        .id_salt(("coach-details", view.game_number, n))
+                        .show(ui, |ui| show_lines(ui, &m.details));
                 }
             }
+            show_lines(ui, &lines);
         });
     }
 
@@ -1267,6 +1261,28 @@ fn level_message(level: Level) -> &'static str {
         Level::Easy => "level-easy",
         Level::Medium => "level-medium",
         Level::Strong => "level-strong",
+    }
+}
+
+/// Shows coach lines in their styles.
+fn show_lines(ui: &mut egui::Ui, lines: &[coach::Line]) {
+    for line in lines {
+        let text = RichText::new(&line.text);
+        match line.style {
+            Style::Heading => {
+                ui.add_space(4.0);
+                ui.label(text.strong().size(15.0));
+            }
+            Style::Strong => {
+                ui.label(text.strong());
+            }
+            Style::Normal => {
+                ui.label(text);
+            }
+            Style::Weak => {
+                ui.label(text.weak().small());
+            }
+        }
     }
 }
 

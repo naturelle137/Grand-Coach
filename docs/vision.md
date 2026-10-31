@@ -45,12 +45,13 @@ the opponents' shoes**.
   best option. Hints come in stages: what to think about (goal, facts,
   likely cards), then the situation (options unjudged, a qualitative hint),
   then figures per option (winning probability, expected points), still
-  unjudged. The figures can be hidden.
+  unjudged. The figures are hidden unless switched on.
 - **After the move**: a short note on how good it was.
 - **Warning before a weak move**: optional setting, off by default; it
   names no alternative.
-- **Post-game analysis**: the particularly good and bad moments, each with
-  the better alternative and the reasoning.
+- **Post-game analysis**: up to three particularly good and bad moments,
+  each with the model's judgement and the better alternative in a short
+  summary; comparison, figures and assumptions on request (D-52).
 - **Statistics over time**: error types are collected (e.g. "misjudged the
   remaining trumps") so that weaknesses become visible.
 

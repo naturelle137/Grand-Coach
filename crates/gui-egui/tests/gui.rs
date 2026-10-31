@@ -11,9 +11,9 @@ use rand_chacha::ChaCha8Rng;
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use skat_app::coach_model::Judgement;
 use skat_app::{
-    Action, Advice, Announcement, Budget, Card, CoachLevel, CoachSettings, Command, GameType,
-    Level, Opponents, Pending, Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig,
-    Suit, TableView,
+    Action, Advice, Announcement, Budget, Card, CoachLevel, CoachSettings, Command, Debriefing,
+    GameType, Level, Opponents, Pending, Phase, PlayedCard, PlayerId, SeriesLength, Session,
+    SessionConfig, Suit, TableView,
 };
 
 const TABLE_GREEN: egui::Color32 = egui::Color32::from_rgb(34, 102, 58);
@@ -916,6 +916,11 @@ fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
     };
     let mut harness = harness(config);
     harness.state_mut().set_coach_budget(COACH_BUDGET);
+    // Figures are off by default; this test shows them explicitly.
+    harness.state_mut().set_coach(CoachSettings {
+        show_figures: true,
+        ..CoachSettings::default()
+    });
     // Play cards until the human decides in the third trick: card play
     // analyses are fast.
     let mut rng = ChaCha8Rng::seed_from_u64(1);
@@ -1056,8 +1061,117 @@ fn coach_levels_are_set_in_the_settings_menu() {
     if harness.query_by_label("Zahlen anzeigen").is_none() {
         button(&mut harness, "Einstellungen");
     }
-    click(&mut harness, Role::CheckBox, "Zahlen anzeigen");
+    // Figures are off by default (D-52); the checkbox turns them on.
     assert!(!view(&harness).coach.settings.show_figures);
+    click(&mut harness, Role::CheckBox, "Zahlen anzeigen");
+    assert!(view(&harness).coach.settings.show_figures);
+}
+
+#[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
+fn debriefing_details_open_and_close_without_touching_the_game() {
+    let config = SessionConfig {
+        seed: 21,
+        series: SeriesLength::Fixed(36),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    harness.state_mut().set_coach_budget(COACH_BUDGET);
+    // Default figure setting: off.
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        ..CoachSettings::default()
+    });
+    let mut rng = ChaCha8Rng::seed_from_u64(3);
+    // Play games until a debriefing has a moment.
+    loop {
+        settle(&mut harness);
+        if view(&harness).acting.is_some() {
+            human_turn(&mut harness, &mut rng);
+            continue;
+        }
+        let mut ready = None;
+        for _ in 0..20_000 {
+            harness.run_steps(1);
+            if let Some(Debriefing::Ready(moments)) = view(&harness).coach.debriefing {
+                ready = Some(moments);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let moments = ready.expect("the debriefing finishes");
+        harness.run_steps(3);
+        if !moments.is_empty() {
+            break;
+        }
+        human_turn(&mut harness, &mut rng);
+    }
+    let before = view(&harness);
+    // The summary only: no estimate, the details collapsed.
+    assert!(harness.query_all_by_label_contains("%").count() == 0);
+    assert!(
+        harness
+            .query_all_by_label_contains("Modellbewertung")
+            .count()
+            == 0
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("Eine strategische Begründung liegt noch nicht vor")
+            .count()
+            > 0
+    );
+    let open = |harness: &mut Harness<'_, GrandCoachApp>| {
+        harness
+            .get_all_by_label("Analysedetails")
+            .next()
+            .unwrap()
+            .click();
+        harness.run_steps(4);
+    };
+    open(&mut harness);
+    assert!(
+        harness
+            .query_all_by_label_contains("Modellbewertung")
+            .count()
+            > 0
+    );
+    assert!(harness.query_all_by_label_contains("Annahme:").count() > 0);
+    assert_eq!(view(&harness), before, "opening changes nothing");
+    open(&mut harness);
+    assert!(
+        harness
+            .query_all_by_label_contains("Modellbewertung")
+            .count()
+            == 0
+    );
+    assert_eq!(view(&harness), before, "closing changes nothing");
+    // English, too.
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(3);
+    assert!(harness.query_all_by_label("Analysis details").count() > 0);
+    assert!(
+        harness
+            .query_all_by_label_contains("No strategic explanation is available yet")
+            .count()
+            > 0
+    );
+    // In the smallest window (`main`) the details and "next game" stay
+    // reachable.
+    harness.set_size(egui::Vec2::new(960.0, 640.0));
+    harness.run_steps(4);
+    harness
+        .get_all_by_label("Analysis details")
+        .last()
+        .unwrap()
+        .click();
+    harness.run_steps(4);
+    assert!(harness.query_all_by_label_contains("Model rating").count() > 0);
+    assert_eq!(game_part(&view(&harness)), game_part(&before));
+    let number = before.game_number;
+    button(&mut harness, "Next game");
+    assert_eq!(view(&harness).game_number, number + 1);
 }
 
 #[test]

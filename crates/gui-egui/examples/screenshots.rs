@@ -16,7 +16,7 @@
 use eframe::egui::{Key, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use gui_egui::GrandCoachApp;
+use gui_egui::{GrandCoachApp, Language};
 use skat_app::coach_model::Judgement;
 use skat_app::{
     Action, Advice, Budget, Card, CoachLevel, CoachSettings, Debriefing, Level, Opponents, Pending,
@@ -24,6 +24,10 @@ use skat_app::{
 };
 
 const SIZE: [f32; 2] = [1280.0, 820.0];
+
+/// The smallest window `main` allows; scenarios whose name ends in
+/// `-narrow` shrink to it after reaching their state.
+const NARROW: [f32; 2] = [960.0, 640.0];
 
 type Scenario = fn(&mut Harness<'_, GrandCoachApp>);
 
@@ -42,6 +46,10 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("coach-no-figures", coach_no_figures),
     ("coach-note", coach_note),
     ("coach-debriefing", coach_debriefing),
+    ("coach-debriefing-details", coach_debriefing_details),
+    ("coach-debriefing-en", coach_debriefing_en),
+    ("coach-debriefing-narrow", coach_debriefing_details),
+    ("coach-debriefing-en-narrow", coach_debriefing_en),
     ("coach-warning", coach_warning),
 ];
 
@@ -162,17 +170,41 @@ fn coach_note(harness: &mut Harness<'_, GrandCoachApp>) {
     });
 }
 
-/// The debriefing after the first game, coach at every move.
+/// The debriefing after the first game, coach at every move, figures off
+/// by default: the moments' summaries, details collapsed.
 fn coach_debriefing(harness: &mut Harness<'_, GrandCoachApp>) {
     harness.state_mut().set_coach(CoachSettings {
         level: CoachLevel::EveryMove,
-        warnings: false,
-        show_figures: true,
+        ..CoachSettings::default()
     });
     play_until(harness, |view, _| view.acting.is_none());
     await_coach(harness, |view| {
         matches!(view.coach.debriefing, Some(Debriefing::Ready(_)))
     });
+}
+
+/// The debriefing with the details of its first moment open.
+fn coach_debriefing_details(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_debriefing(harness);
+    open_details(harness, "Analysedetails");
+}
+
+/// The debriefing in English, details of the first moment open.
+fn coach_debriefing_en(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_debriefing(harness);
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(4);
+    open_details(harness, "Analysis details");
+}
+
+/// Opens the details of the debriefing's first moment.
+fn open_details(harness: &mut Harness<'_, GrandCoachApp>, label: &str) {
+    harness
+        .get_all_by_label(label)
+        .next()
+        .expect("a moment with details")
+        .click();
+    harness.run_steps(4);
 }
 
 /// The warning before a clearly weaker card (coach at every move).
@@ -264,6 +296,9 @@ fn main() {
         }
         let mut harness = harness(*name == "launch");
         scenario(&mut harness);
+        if name.ends_with("-narrow") {
+            harness.set_size(NARROW.into());
+        }
         harness.run_steps(4);
         let path = format!("{out}/{name}.png");
         harness
