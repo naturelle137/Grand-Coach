@@ -31,8 +31,9 @@ Agreed sequential order:
 
 **#41 → #42 → #51 → #43 → #44 → #45 → #46 → #47 → M5 acceptance (#10) → #11 → #48 → #12 → #13 foundations → #49 → #50 → #54 → final M8 acceptance.**
 
-Issue #51 prepares the checklist/protocol before lessons exist; each later M5
-PR applies it and supplies applicable learner UAT steps. Record combined
+Issue #51 prepares the checklist/protocol before lessons exist
+([coach-validation.md](coach-validation.md), D-54); each later M5
+PR applies its part A and supplies applicable learner UAT steps (part B). Record combined
 M5 learner UAT after #47 before declaring #10 complete. #51 does not wait
 for those runs. #54 performs the integrated M8 evaluation after #50.
 
@@ -53,7 +54,8 @@ prerequisite is now available. Reinspect its merged APIs before coding.
    No invented replacement explanations; existing comparisons stay in details.
 2. **Teaching foundation (B/C/D/F/G; E separately):** exact lessons, supported
    mechanisms, focus and understandable historical context. Engineering
-   readiness needs these tests; educational validation still needs humans.
+   readiness needs these tests; educational validation still needs the
+   maintainer's learner UAT (not expert review).
 3. **Independent practice (H/I/J):** selective retrieval, local observations
    and new tasks without help, after the milestone-owned foundations exist.
 4. **Validation (K in M5, L in M8):** prepare the evidence/UAT protocol
@@ -95,6 +97,8 @@ additional outcomes; parent completion still requires its full existing scope.
   performs learner UAT for clarity/usability, not expert certification.
   Factual/strategic claims need independently specified evidence and tests;
   another AI or the same solver's agreement is not an independent oracle.
+  The checklist, UAT script and templates are in
+  [coach-validation.md](coach-validation.md).
 - Distinguish technical correctness, learner comprehension, assistance and
   new unaided performance. K closes on preparation; L and the applicable
   human-run items of #39 remain pending until actual execution. No invented

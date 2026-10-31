@@ -133,6 +133,13 @@ series to the score sheet, switch language and card faces.
   [roadmap.md](roadmap.md). Measurable parts move into verification once
   they exist (e.g. AI strength levels via the AI-vs-AI calibration runner,
   M4, [ai.md](ai.md)).
+- **Coach lessons** (D-51, D-54): correctness of each lesson's facts and
+  conditions is verification, by fixtures with independently specified
+  expected results; learner comprehension and unaided transfer are
+  validation by the maintainer as a learner. No human Skat expert sign-off
+  is required or claimed, so passing tests support only the tested claims,
+  not strategic validity or learning efficacy. Checklist, learner UAT
+  script and templates: [coach-validation.md](coach-validation.md).
 
 ## Later (CD)
 

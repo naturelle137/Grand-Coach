@@ -6,7 +6,8 @@ code (`crates/skat-coach`, `crates/skat-app/src/coach.rs`).
 Planned didactic improvements and the implementation comparison are in
 [coach-didactics.md](coach-didactics.md); agent-sized follow-up issues are
 listed in [coach-work-packages.md](coach-work-packages.md). These are planned
-changes, not a claim of current lesson coverage.
+changes, not a claim of current lesson coverage. Each lesson is checked
+against [coach-validation.md](coach-validation.md) (D-54).
 
 ## Evidence only from the analysis
 

@@ -18,6 +18,7 @@ putting yourself in the opponents' shoes.
 - `docs/analysis.md`: analysis semantics, budgets and latency (D-37, D-38)
 - `docs/ai.md`: strength levels, calibration protocol and results (D-40)
 - `docs/coach.md`: coach evidence, important/weak policies, lifecycle (D-48)
+- `docs/coach-validation.md`: lesson evidence checklist, learner UAT (D-54)
 - `docs/third-party.md`: origin and licence of third-party files
 - `docs/glossary.md`: German Skat terms → English
 - `CONTRIBUTING.md`: branching, commits, pull requests
