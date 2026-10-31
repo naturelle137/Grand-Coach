@@ -43,17 +43,51 @@ distributions as the estimates.
   announcements.
 - **Warning**: only with a complete analysis and a weak chosen action.
 
+## No telling ahead (D-49)
+
+Before the move a frontend gets `Hints` (`skat_coach::hints`), never the
+ranked `Explanation`. Each `RequestAdvice` reveals one more `Stage`:
+
+1. `Considerations`: objective, sure facts, likely inferences.
+2. `Situation`: the legal options in the view's order and a `Situation`
+   (`Forced`, `OneStandsOut`, `SeveralEqual`, `Unclear` when the analysis
+   is incomplete) plus the important-decision mark. No option is named as
+   better.
+3. `Figures`: every option's estimate in the same neutral order, no
+   judgement; only with "show figures" (otherwise stage 2 is the last).
+
+After the move `review` judges the chosen option; `MoveReview::note` is the
+short note (`Good`, `AboutEqual`, `SomewhatWeaker`, `ClearlyWeaker`,
+`Forced`, `Uncertain`). At the end of the game `moments` picks from the
+complete, not forced reviews at most `BAD_MOMENTS` (3) worse or weak
+choices losing at least `MOMENT_POINTS` (5 Seeger-Fabian points), by
+expected loss, and at most `GOOD_MOMENTS` (2) important
+decisions decided best or equivalent, by the loss of the costliest natural
+weak option avoided (the `trap`); they are shown in game order with the
+better option, reasons, figures and what was known then. The warning
+(`Warning`) carries only the chosen option and its loss.
+
 ## Session lifecycle (`skat-app`)
 
-- Levels (D-08): **off** (no explanations, no help action), **on request**
-  (default; `RequestAdvice`), **important** (shown when important, help
-  action too), **every move**. Warning off by default (D-09), independent
-  of the level; "show figures" hides estimates but keeps the reasoning and
-  exact facts.
+- Levels (D-08, D-49): **off** (no hints, notes or debriefing, no help
+  action), **on request** (default; each `RequestAdvice` one stage),
+  **important** (stage 2 on its own when important, help action too),
+  **every move** (stage 1 on its own). Warning off by default (D-09),
+  independent of the level; "show figures" hides estimates but keeps the
+  reasoning and exact facts.
+- With the level not off, every own decision is analysed for the note
+  (`CoachView::last_move`) and the debriefing (`CoachView::debriefing`,
+  once the game is over). A decision played before its analysis finished
+  is queued with its view; `coach_job` hands out the current decision
+  first, then the oldest queued one (`CoachJob::is_review`), and the
+  frontend cancels a running review when the current decision needs an
+  analysis. A cancelled review stays queued; the next game drops the
+  queue. `Session::coach_result` exposes the full analysis for tools and
+  tests only.
 - `Session::coach_job` hands out the analysis of the human's view when one
   is due; the frontend runs it off the UI thread. `finish_coach` accepts it
-  only for the same decision (game number, actions applied) and budget;
-  any action invalidates it. Cancelled or failed analyses show as
+  only for the same decision (game number, actions applied) and budget, or
+  for a queued one. Cancelled or failed analyses show as
   unavailable, asking again recomputes; an analysis out of budget shows as
   provisional without recommendation, importance or warning.
 - Warning flow: with warnings on, `Act` holds the action until the
@@ -103,8 +137,8 @@ spreads its work over all available threads, so fewer threads mean
 longer waits. The positions also differ from the analysis benchmark:
 every bidding decision counts, not only opening calls, and the human
 bids as the coach suggests. While the coach computes, the panel shows a translated
-"thinking" status and the player can act at any time; acting cancels the
-analysis. The GUI test `window_stays_responsive_while_the_coach_analyses`
+"thinking" status and the player can act at any time; the analysis then
+continues for the note, unless the next own decision needs one first. The GUI test `window_stays_responsive_while_the_coach_analyses`
 checks that frames keep returning quickly during a full interactive
 analysis and that acting works meanwhile. The interactive smoke test in
 the playable application on the reference hardware is still open

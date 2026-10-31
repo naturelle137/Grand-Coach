@@ -40,8 +40,8 @@ mod tests;
 mod view;
 
 pub use coach::{
-    Advice, CoachEvent, CoachJob, CoachLevel, CoachResult, CoachSettings, CoachView, Pending,
-    Unavailable,
+    Advice, CoachEvent, CoachJob, CoachLevel, CoachResult, CoachSettings, CoachView, Debriefing,
+    LastMove, Pending, Unavailable,
 };
 pub use series::{GameRecord, ScoreSheet, SeriesResult};
 pub use session::{

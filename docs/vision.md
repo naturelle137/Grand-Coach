@@ -41,11 +41,16 @@ the opponents' shoes**.
 
 - **Intervention levels**: off / on request (help button) / at important
   decisions / at every move.
-- **Presentation**: verbal explanation plus figures per option (winning
-  probability, expected points). The figures can be hidden.
-- **Warning before a weak move**: optional setting, off by default.
-- **Post-game analysis**: the 2–3 decisive moments, each with the better
-  alternative and the reasoning.
+- **No telling ahead** (D-49): before the move the coach never names the
+  best option. Hints come in stages: what to think about (goal, facts,
+  likely cards), then the situation (options unjudged, a qualitative hint),
+  then figures per option (winning probability, expected points), still
+  unjudged. The figures can be hidden.
+- **After the move**: a short note on how good it was.
+- **Warning before a weak move**: optional setting, off by default; it
+  names no alternative.
+- **Post-game analysis**: the particularly good and bad moments, each with
+  the better alternative and the reasoning.
 - **Statistics over time**: error types are collected (e.g. "misjudged the
   remaining trumps") so that weaknesses become visible.
 

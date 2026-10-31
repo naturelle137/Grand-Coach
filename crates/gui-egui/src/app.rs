@@ -7,10 +7,12 @@ use eframe::egui::{self, Color32, RichText, Vec2};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use skat_app::{
-    Action, Advice, Announcement, AppError, AppEvent, Cancel, Card, CardSet, CoachLevel,
+    Action, Advice, Announcement, AppError, AppEvent, Cancel, Card, CardSet, CoachJob, CoachLevel,
     CoachResult, CoachSettings, Command, Event, GameType, Level, OpponentMove, Opponents, Pending,
     Phase, PlayedCard, PlayerId, SeriesLength, Session, SessionConfig, Suit, TableView, reizwerte,
 };
+
+use skat_app::coach_model::Stage;
 
 use crate::cards::{self, Deck};
 use crate::coach::{self, Style};
@@ -78,8 +80,10 @@ impl Drop for Thinking {
 }
 
 /// A coach analysis computed on a background thread. Dropping it cancels
-/// the computation (the decision changed or a new series started).
+/// the computation (a new game or series started, or the current decision
+/// goes before a review).
 struct CoachThinking {
+    job: CoachJob,
     result: Receiver<CoachResult>,
     cancel: Cancel,
 }
@@ -194,11 +198,11 @@ impl GrandCoachApp {
         match result {
             Ok(events) => {
                 self.error = None;
-                let moved = events
+                if events
                     .iter()
-                    .any(|e| matches!(e, AppEvent::Game { .. } | AppEvent::GameStarted { .. }));
-                if moved {
-                    // The decision changed: its analysis is no longer needed.
+                    .any(|e| matches!(e, AppEvent::GameStarted { .. }))
+                {
+                    // A new game: the analyses of the last one are dropped.
                     self.coach_thinking = None;
                 }
                 let trick_done = events.iter().any(|e| {
@@ -281,19 +285,34 @@ impl GrandCoachApp {
 
     /// Runs the coach analysis the session asks for on a background thread
     /// and hands the result back; the window stays responsive meanwhile.
+    /// A decision played meanwhile keeps its analysis running: it backs
+    /// the note and the debriefing. The current decision goes first: an
+    /// analysis of an earlier one is cancelled and rerun afterwards.
     fn drive_coach(&mut self, ctx: &egui::Context, now: f64) {
+        if let Some(thinking) = &self.coach_thinking
+            && let Some(next) = self.session.coach_job()
+            && !next.is_review()
+            && !next.same_decision(&thinking.job)
+        {
+            self.coach_thinking = None;
+        }
         if self.coach_thinking.is_none()
             && let Some(job) = self.session.coach_job()
         {
             let (sender, result) = std::sync::mpsc::channel();
             let cancel = Cancel::new();
             let (stop, repaint) = (cancel.clone(), ctx.clone());
+            let run = job.clone();
             std::thread::spawn(move || {
-                // The receiver is gone if the decision changed meanwhile.
-                let _ = sender.send(job.run(Some(&stop)));
+                // The receiver is gone if the analysis was dropped.
+                let _ = sender.send(run.run(Some(&stop)));
                 repaint.request_repaint();
             });
-            self.coach_thinking = Some(CoachThinking { result, cancel });
+            self.coach_thinking = Some(CoachThinking {
+                job,
+                result,
+                cancel,
+            });
         }
         if let Some(thinking) = &self.coach_thinking {
             match thinking.result.try_recv() {
@@ -398,9 +417,13 @@ impl GrandCoachApp {
         let human = view.acting == Some(PlayerId::HUMAN);
         ui.heading(self.t("coach-title"));
         if coach.help_available && human {
-            let asked = !matches!(coach.advice, Advice::None);
+            // One stage per click (D-49); the label names the next one.
+            let label = coach.next_stage.map_or_else(
+                || coach::stage_button(&self.i18n, Stage::Figures),
+                |s| coach::stage_button(&self.i18n, s),
+            );
             if ui
-                .add_enabled(!asked, egui::Button::new(self.t("button-coach-help")))
+                .add_enabled(coach.next_stage.is_some(), egui::Button::new(label))
                 .clicked()
             {
                 self.send(Command::RequestAdvice, now);
@@ -412,6 +435,12 @@ impl GrandCoachApp {
         let figures = coach.settings.show_figures;
         ui.separator();
         let mut lines = Vec::new();
+        if let Some(last) = &coach.last_move {
+            lines.push(coach::note(i, last));
+        }
+        if let Some(d) = &coach.debriefing {
+            lines.extend(coach::debriefing(i, view, d, figures));
+        }
         match &coach.advice {
             Advice::None if coach.analysing && human => {
                 ui.horizontal(|ui| {
@@ -422,6 +451,7 @@ impl GrandCoachApp {
             Advice::None if human => {
                 ui.label(RichText::new(i.t("coach-status-idle")).weak());
             }
+            Advice::None if coach.debriefing.is_some() => {}
             Advice::None => {
                 ui.label(RichText::new(i.t("coach-status-waiting")).weak());
             }
@@ -431,8 +461,8 @@ impl GrandCoachApp {
                     ui.label(i.t("coach-status-computing"));
                 });
             }
-            Advice::Ready(e) | Advice::Provisional(e) => {
-                lines = coach::explanation(i, view, e, figures);
+            Advice::Ready(h) | Advice::Provisional(h) => {
+                lines.extend(coach::hints(i, view, h, figures));
             }
             Advice::Unavailable(reason) => {
                 ui.label(coach::unavailable(i, *reason));

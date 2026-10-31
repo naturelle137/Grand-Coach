@@ -19,8 +19,7 @@ use std::time::{Duration, Instant};
 
 use skat_app::coach_model::Decision;
 use skat_app::{
-    Advice, CoachLevel, CoachSettings, Command, Level, Opponents, SeriesLength, Session,
-    SessionConfig,
+    CoachLevel, CoachSettings, Command, Level, Opponents, SeriesLength, Session, SessionConfig,
 };
 
 const KINDS: [&str; 8] = [
@@ -91,14 +90,12 @@ fn main() {
             let job = session.coach_job().expect("every move: a coach job");
             let start = Instant::now();
             let result = job.run(None);
+            let explanation = result.explanation().cloned();
             session.finish_coach(result).expect("same decision");
             let elapsed = start.elapsed();
             let view = session.view();
-            let (explanation, complete) = match &view.coach.advice {
-                Advice::Ready(e) => (Some(e), true),
-                Advice::Provisional(e) => (Some(e), false),
-                _ => (None, false),
-            };
+            let explanation = explanation.as_ref();
+            let complete = explanation.is_some_and(|e| e.complete());
             let k = explanation.and_then(|e| kind(e.decision, view.tricks_played));
             if let Some(k) = k
                 && times[k].len() < per_kind

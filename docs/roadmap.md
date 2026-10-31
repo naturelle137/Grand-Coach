@@ -46,7 +46,9 @@ No individual tasks here.
   evaluation with reasoning) for bidding, discarding, game choice and play,
   supports the levels off / on request / important / every move plus the
   optional pre-move warning, works in German and English, and every
-  statement comes from the analysis layer.
+  statement comes from the analysis layer. Without telling the move ahead
+  (D-49): staged hints before the move, a note after it and a debriefing
+  of the good and bad moments after the game.
 
 - [ ] **M6 – Card counting**
   Done when the optional counting aid (cards played, trumps out, card points,
@@ -55,8 +57,8 @@ No individual tasks here.
 - [ ] **M7 – Open mode, replay, post-game analysis**
   Done when open mode can be played and the coach shows how the opponents'
   hands could have been deduced. Also: games can be replayed trick by trick
-  and replayed with the same deal, and after each game the 2–3 decisive
-  moments appear.
+  and replayed with the same deal. The debriefing of a game's good and bad
+  moments already comes with M5 (D-49).
 
 - [ ] **M8 – Training and release 1.0**
   Done when error statistics over time and the training mode work and there

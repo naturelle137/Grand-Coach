@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: EUPL-1.2
 
-//! Translated texts of the live coach (M5): turns the structured
-//! explanation of `skat-coach` (via `skat-app`) into lines. Estimated
-//! figures (chances, expected points, uncertainty, expected card counts)
-//! appear only with "show figures"; exact facts such as counted cards,
-//! Augen and bid values always do.
+//! Translated texts of the live coach (M5, D-49): turns the staged hints,
+//! the note on the last move, the debriefing and the warning of
+//! `skat-coach` (via `skat-app`) into lines. Before the move nothing ranks
+//! or labels an option. Estimated figures (chances, expected points,
+//! uncertainty, expected card counts) appear only with "show figures";
+//! exact facts such as counted cards, Augen and bid values always do.
 
 use skat_app::coach_model::{
-    Amount, Assumption, CardClass, ComparedOption, Consideration, Decision, Explanation, Follow,
-    Judgement, Objective, Observation, Place, Reason, Role, Verdict, Warning,
+    Amount, Assumption, Basis, CardClass, ComparedOption, Consideration, Decision, Estimate,
+    Follow, Hints, Judgement, Moment, MomentKind, Note, Objective, Observation, Place, Reason,
+    Role, Situation, Stage, Warning,
 };
-use skat_app::{Action, Contract, PlayerId, Seat, TableView, Unavailable};
+use skat_app::{Action, Contract, Debriefing, LastMove, PlayerId, Seat, TableView, Unavailable};
 
 use crate::i18n::I18n;
 use crate::text;
@@ -41,8 +43,8 @@ fn line(text: String, style: Style) -> Line {
     Line { text, style }
 }
 
-/// Options shown in full; the rest only count.
-const SHOWN_OPTIONS: usize = 5;
+/// Options listed in full; the rest only count.
+const SHOWN_OPTIONS: usize = 12;
 
 /// Player sitting on `seat` in the current deal.
 fn seat_player(view: &TableView, seat: Seat) -> PlayerId {
@@ -60,11 +62,17 @@ fn points(x: f64) -> String {
     format!("{x:+.1}")
 }
 
-/// A legal action in words.
+/// A legal action of the current decision in words.
 pub fn action(i18n: &I18n, view: &TableView, action: Action) -> String {
+    action_at(i18n, view.bid, view.hand_game, action)
+}
+
+/// An action in words, at bid value `bid` and with `hand_game` as when it
+/// was decided.
+fn action_at(i18n: &I18n, bid: u16, hand_game: Option<bool>, action: Action) -> String {
     match action {
         Action::Bid(value) => i18n.tf("coach-action-bid", &[("value", value.into())]),
-        Action::Hold => i18n.tf("coach-action-hold", &[("value", view.bid.into())]),
+        Action::Hold => i18n.tf("coach-action-hold", &[("value", bid.into())]),
         Action::Pass => i18n.t("button-pass"),
         Action::Hand => i18n.t("button-hand"),
         Action::TakeSkat => i18n.t("button-take-skat"),
@@ -76,7 +84,7 @@ pub fn action(i18n: &I18n, view: &TableView, action: Action) -> String {
             )
         }
         Action::Announce(a) => {
-            let contract = Contract::new(a, view.hand_game == Some(true));
+            let contract = Contract::new(a, hand_game == Some(true));
             i18n.tf(
                 "coach-action-announce",
                 &[("game", text::contract(i18n, contract).into())],
@@ -289,83 +297,47 @@ fn reason(i18n: &I18n, other: &str, r: Reason, figures: bool) -> String {
     }
 }
 
-fn option_lines(
-    i18n: &I18n,
-    view: &TableView,
-    role: Role,
-    o: &ComparedOption,
-    figures: bool,
-) -> Vec<Line> {
-    let mut out = vec![line(
-        format!(
-            "{} – {}",
-            action(i18n, view, o.action),
-            judgement(i18n, o.judgement)
-        ),
-        if o.judgement == Judgement::Best {
-            Style::Strong
-        } else {
-            Style::Normal
-        },
-    )];
-    if figures && let Some(e) = o.estimate {
-        let party = i18n.t(match role {
-            Role::Bidder => "coach-party-own",
-            Role::Declarer => "coach-party-declarer",
-            Role::Defender => "coach-party-defenders",
-        });
-        let mut metrics = i18n.tf(
-            "coach-metric-win",
-            &[
-                ("party", party.into()),
-                ("chance", percent(e.win_chance).into()),
-            ],
-        );
-        metrics.push_str(" · ");
-        metrics.push_str(&i18n.tf(
-            "coach-metric-score",
-            &[
-                ("score", points(e.expected_score).into()),
-                ("se", format!("{:.1}", e.score_std_error).into()),
-            ],
+/// The figures of one estimate.
+fn metrics(i18n: &I18n, role: Role, e: &Estimate) -> String {
+    let party = i18n.t(match role {
+        Role::Bidder => "coach-party-own",
+        Role::Declarer => "coach-party-declarer",
+        Role::Defender => "coach-party-defenders",
+    });
+    let mut out = i18n.tf(
+        "coach-metric-win",
+        &[
+            ("party", party.into()),
+            ("chance", percent(e.win_chance).into()),
+        ],
+    );
+    out.push_str(" · ");
+    out.push_str(&i18n.tf(
+        "coach-metric-score",
+        &[
+            ("score", points(e.expected_score).into()),
+            ("se", format!("{:.1}", e.score_std_error).into()),
+        ],
+    ));
+    if role != Role::Declarer {
+        out.push_str(" · ");
+        out.push_str(&i18n.tf(
+            "coach-metric-game-points",
+            &[("points", points(e.expected_game_points).into())],
         ));
-        if role != Role::Declarer {
-            metrics.push_str(" · ");
-            metrics.push_str(&i18n.tf(
-                "coach-metric-game-points",
-                &[("points", points(e.expected_game_points).into())],
-            ));
-        }
-        out.push(line(metrics, Style::Weak));
-    }
-    if let Some(other) = o.compared_with {
-        let other = action(i18n, view, other);
-        for &r in &o.reasons {
-            out.push(line(
-                format!("• {}", reason(i18n, &other, r, figures)),
-                Style::Normal,
-            ));
-        }
     }
     out
 }
 
-/// The explanation as lines.
-pub fn explanation(i18n: &I18n, view: &TableView, e: &Explanation, figures: bool) -> Vec<Line> {
-    let mut out = vec![
-        line(
-            format!("{} · {}", decision(i18n, e.decision), role(i18n, e.role)),
-            Style::Heading,
-        ),
-        line(objective(i18n, e.role, e.objective), Style::Normal),
-    ];
-    if !e.complete() {
-        out.push(line(i18n.t("coach-provisional"), Style::Strong));
-    } else if e.important {
-        out.push(line(i18n.t("coach-important"), Style::Strong));
-    }
-    let facts: Vec<Line> = e
-        .considerations
+/// What the seat knows and can infer, in two sections.
+fn considerations(
+    i18n: &I18n,
+    view: &TableView,
+    considerations: &[Consideration],
+    figures: bool,
+) -> Vec<Line> {
+    let mut out = Vec::new();
+    let facts: Vec<Line> = considerations
         .iter()
         .filter_map(|c| match c {
             Consideration::Known(o) => {
@@ -378,8 +350,7 @@ pub fn explanation(i18n: &I18n, view: &TableView, e: &Explanation, figures: bool
         out.push(line(i18n.t("coach-section-facts"), Style::Heading));
         out.extend(facts);
     }
-    let guesses: Vec<Line> = e
-        .considerations
+    let guesses: Vec<Line> = considerations
         .iter()
         .filter_map(|c| match c {
             Consideration::Inferred(i) => Some(line(
@@ -393,48 +364,26 @@ pub fn explanation(i18n: &I18n, view: &TableView, e: &Explanation, figures: bool
         out.push(line(i18n.t("coach-section-inferred"), Style::Heading));
         out.extend(guesses);
     }
-    out.push(line(i18n.t("coach-section-options"), Style::Heading));
-    let best = e.best().map(|b| action(i18n, view, b.action));
+    out
+}
+
+/// The basis and the assumptions of the estimates.
+fn basis(i18n: &I18n, basis: &Basis, assumptions: &[Assumption], figures: bool) -> Vec<Line> {
+    let mut out = vec![line(i18n.t("coach-section-basis"), Style::Heading)];
     out.push(line(
-        match (e.verdict, &best) {
-            (Verdict::Forced, _) => i18n.t("coach-verdict-forced"),
-            (Verdict::Clear, Some(best)) if e.complete() => {
-                i18n.tf("coach-verdict-clear", &[("best", best.clone().into())])
-            }
-            (Verdict::Close { equivalent }, Some(best)) if e.complete() => i18n.tf(
-                "coach-verdict-close",
-                &[("best", best.clone().into()), ("count", equivalent.into())],
-            ),
-            (Verdict::Unknown, _) => i18n.t("coach-verdict-unknown"),
-            _ => i18n.t("coach-verdict-provisional"),
-        },
-        Style::Strong,
-    ));
-    for o in e.options.iter().take(SHOWN_OPTIONS) {
-        out.extend(option_lines(i18n, view, e.role, o, figures));
-    }
-    let rest = e.options.len().saturating_sub(SHOWN_OPTIONS);
-    if rest > 0 {
-        out.push(line(
-            i18n.tf("coach-more-options", &[("count", rest.into())]),
-            Style::Weak,
-        ));
-    }
-    out.push(line(i18n.t("coach-section-basis"), Style::Heading));
-    out.push(line(
-        if e.basis.enumerated {
+        if basis.enumerated {
             i18n.t("coach-basis-exact")
         } else if figures {
             i18n.tf(
                 "coach-basis-sampled-figures",
-                &[("finished", e.basis.finished.into())],
+                &[("finished", basis.finished.into())],
             )
         } else {
             i18n.t("coach-basis-sampled")
         },
         Style::Weak,
     ));
-    for a in &e.assumptions {
+    for a in assumptions {
         out.push(line(
             format!(
                 "• {}",
@@ -452,23 +401,235 @@ pub fn explanation(i18n: &I18n, view: &TableView, e: &Explanation, figures: bool
     out
 }
 
-/// The warning before a weak action, as lines.
-pub fn warning(i18n: &I18n, view: &TableView, w: &Warning, figures: bool) -> Vec<Line> {
-    let chosen = action(i18n, view, w.chosen.action);
-    let best = action(i18n, view, w.best.action);
+/// The label of the help button that reveals `stage`.
+pub fn stage_button(i18n: &I18n, stage: Stage) -> String {
+    i18n.t(match stage {
+        Stage::Considerations => "button-coach-considerations",
+        Stage::Situation => "button-coach-situation",
+        Stage::Figures => "button-coach-figures",
+    })
+}
+
+/// The hints before the move, as lines: the revealed stages only, the
+/// options in neutral order and never judged (D-49).
+pub fn hints(i18n: &I18n, view: &TableView, h: &Hints, figures: bool) -> Vec<Line> {
+    let complete = h.status == skat_app::coach_model::Status::Complete;
+    let mut out = vec![
+        line(
+            format!("{} · {}", decision(i18n, h.decision), role(i18n, h.role)),
+            Style::Heading,
+        ),
+        line(objective(i18n, h.role, h.objective), Style::Normal),
+    ];
+    if !complete {
+        out.push(line(i18n.t("coach-provisional"), Style::Strong));
+    }
+    out.extend(considerations(i18n, view, &h.considerations, figures));
+    if let Some(s) = &h.situation {
+        out.push(line(i18n.t("coach-section-situation"), Style::Heading));
+        out.push(line(
+            match s.situation {
+                Situation::Forced => i18n.t("coach-situation-forced"),
+                Situation::OneStandsOut => i18n.t("coach-situation-one"),
+                Situation::SeveralEqual { count } => {
+                    i18n.tf("coach-situation-several", &[("count", count.into())])
+                }
+                Situation::Unclear => i18n.t("coach-situation-unclear"),
+            },
+            Style::Strong,
+        ));
+        if s.important && complete {
+            out.push(line(i18n.t("coach-important"), Style::Strong));
+        }
+        match (&h.figures, figures) {
+            (Some(all), true) => {
+                out.push(line(i18n.t("coach-section-figures"), Style::Heading));
+                for f in all.iter().take(SHOWN_OPTIONS) {
+                    out.push(line(action(i18n, view, f.action), Style::Normal));
+                    out.push(line(
+                        match &f.estimate {
+                            Some(e) => metrics(i18n, h.role, e),
+                            None => i18n.t("coach-judgement-not-evaluated"),
+                        },
+                        Style::Weak,
+                    ));
+                }
+            }
+            _ => {
+                out.push(line(i18n.t("coach-section-options"), Style::Heading));
+                for &a in s.options.iter().take(SHOWN_OPTIONS) {
+                    out.push(line(format!("• {}", action(i18n, view, a)), Style::Normal));
+                }
+            }
+        }
+        let rest = s.options.len().saturating_sub(SHOWN_OPTIONS);
+        if rest > 0 {
+            out.push(line(
+                i18n.tf("coach-more-options", &[("count", rest.into())]),
+                Style::Weak,
+            ));
+        }
+    }
+    out.extend(basis(i18n, &h.basis, &h.assumptions, figures));
+    out
+}
+
+/// The note on the human's last move.
+pub fn note(i18n: &I18n, last: &LastMove) -> Line {
+    let text = i18n.t(match last.note {
+        None => "coach-note-computing",
+        Some(Note::Good) => "coach-note-good",
+        Some(Note::AboutEqual) => "coach-note-about-equal",
+        Some(Note::SomewhatWeaker) => "coach-note-somewhat-weaker",
+        Some(Note::ClearlyWeaker) => "coach-note-clearly-weaker",
+        Some(Note::Forced) => "coach-note-forced",
+        Some(Note::Uncertain) => "coach-note-uncertain",
+    });
+    let played = action_at(i18n, last.bid, last.hand_game, last.action);
+    line(
+        i18n.tf(
+            "coach-note",
+            &[("action", played.into()), ("note", text.into())],
+        ),
+        match last.note {
+            Some(Note::Good) => Style::Strong,
+            _ => Style::Normal,
+        },
+    )
+}
+
+/// Reasons of `o` against the option it was compared with.
+fn reasons(
+    i18n: &I18n,
+    o: &ComparedOption,
+    name: impl Fn(Action) -> String,
+    figures: bool,
+) -> Vec<Line> {
+    let Some(other) = o.compared_with else {
+        return Vec::new();
+    };
+    let other = name(other);
+    o.reasons
+        .iter()
+        .map(|&r| {
+            line(
+                format!("• {}", reason(i18n, &other, r, figures)),
+                Style::Normal,
+            )
+        })
+        .collect()
+}
+
+/// One moment of the debriefing.
+fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> Vec<Line> {
+    let r = &m.review;
+    let name = |a: Action| action_at(i18n, r.bid, r.hand_game, a);
+    let mut what = decision(i18n, r.decision);
+    if let Some(trick) = r.trick {
+        what = format!(
+            "{what} · {}",
+            i18n.tf("coach-moment-trick", &[("trick", trick.into())])
+        );
+    }
     let mut out = vec![line(
         i18n.tf(
-            "coach-warning-text",
-            &[("action", chosen.into()), ("best", best.clone().into())],
+            match m.kind {
+                MomentKind::Good => "coach-moment-good",
+                MomentKind::Bad => "coach-moment-bad",
+            },
+            &[("decision", what.into())],
+        ),
+        Style::Heading,
+    )];
+    out.push(line(
+        i18n.tf(
+            "coach-moment-chosen",
+            &[
+                ("action", name(r.chosen.action).into()),
+                ("judgement", judgement(i18n, r.chosen.judgement).into()),
+            ],
         ),
         Style::Strong,
-    )];
-    for &r in &w.chosen.reasons {
-        out.push(line(
-            format!("• {}", reason(i18n, &best, r, figures)),
-            Style::Normal,
-        ));
+    ));
+    let figure_line = |o: &ComparedOption| {
+        o.estimate.filter(|_| figures).map(|e| {
+            line(
+                format!("{}: {}", name(o.action), metrics(i18n, r.role, &e)),
+                Style::Weak,
+            )
+        })
+    };
+    match m.kind {
+        MomentKind::Bad => {
+            if let Some(best) = &r.best {
+                out.push(line(
+                    i18n.tf("coach-moment-better", &[("best", name(best.action).into())]),
+                    Style::Normal,
+                ));
+                out.extend(reasons(i18n, &r.chosen, name, figures));
+                out.extend(figure_line(&r.chosen));
+                out.extend(figure_line(best));
+            }
+        }
+        MomentKind::Good => {
+            if let Some(trap) = &r.trap {
+                out.push(line(
+                    i18n.tf("coach-moment-trap", &[("trap", name(trap.action).into())]),
+                    Style::Normal,
+                ));
+                out.extend(reasons(i18n, trap, name, figures));
+                if figures {
+                    out.push(line(
+                        i18n.tf(
+                            "coach-moment-trap-loss",
+                            &[("points", format!("{:.1}", trap.gap).into())],
+                        ),
+                        Style::Weak,
+                    ));
+                }
+            }
+        }
     }
+    let knew = considerations(i18n, view, &r.considerations, figures);
+    if !knew.is_empty() {
+        out.push(line(i18n.t("coach-moment-knew"), Style::Strong));
+        // One level below the moment: no section headings of their own.
+        out.extend(knew.into_iter().filter(|l| l.style != Style::Heading));
+    }
+    out
+}
+
+/// The end-of-game debriefing, as lines (D-49).
+pub fn debriefing(i18n: &I18n, view: &TableView, d: &Debriefing, figures: bool) -> Vec<Line> {
+    let mut out = vec![line(i18n.t("coach-debriefing-title"), Style::Heading)];
+    match d {
+        Debriefing::Computing { remaining } => out.push(line(
+            i18n.tf(
+                "coach-debriefing-computing",
+                &[("count", (*remaining).into())],
+            ),
+            Style::Weak,
+        )),
+        Debriefing::Ready(moments) if moments.is_empty() => {
+            out.push(line(i18n.t("coach-debriefing-none"), Style::Normal));
+        }
+        Debriefing::Ready(moments) => {
+            for m in moments {
+                out.extend(moment(i18n, view, m, figures));
+            }
+        }
+    }
+    out
+}
+
+/// The warning before a weak action, as lines. It names no alternative
+/// (D-49).
+pub fn warning(i18n: &I18n, view: &TableView, w: &Warning, figures: bool) -> Vec<Line> {
+    let chosen = action(i18n, view, w.chosen.action);
+    let mut out = vec![line(
+        i18n.tf("coach-warning-text", &[("action", chosen.into())]),
+        Style::Strong,
+    )];
     if figures {
         out.push(line(
             i18n.tf(
@@ -493,6 +654,7 @@ pub fn unavailable(i18n: &I18n, reason: Unavailable) -> String {
 mod tests {
     use super::*;
     use crate::i18n::Language;
+    use skat_app::coach_model::{self as model, Explanation};
     use skat_app::{
         Budget, CoachLevel, CoachSettings, Command, Level, Opponents, Phase, SeriesLength, Session,
         SessionConfig,
@@ -551,45 +713,94 @@ mod tests {
             .join("\n")
     }
 
+    /// The texts shown before the move at every stage, and the
+    /// debriefing of every option as if chosen.
+    fn rendered(i18n: &I18n, view: &TableView, e: &Explanation, figures: bool) -> Vec<Vec<Line>> {
+        let mut out: Vec<Vec<Line>> = [Stage::Considerations, Stage::Situation, Stage::Figures]
+            .into_iter()
+            .map(|stage| hints(i18n, view, &model::hints(e, stage), figures))
+            .collect();
+        let reviews: Vec<_> = view
+            .legal_actions
+            .iter()
+            .filter_map(|&a| model::review(e, a))
+            .collect();
+        let moments = model::moments(&reviews);
+        out.push(debriefing(i18n, view, &Debriefing::Ready(moments), figures));
+        out
+    }
+
     #[test]
-    fn hidden_figures_keep_the_reasoning_without_estimates() {
+    fn hints_never_name_or_rank_the_best_option() {
         let all = explanations();
-        assert!(all.len() >= 5, "{}", all.len());
         for language in Language::ALL {
             let i18n = I18n::new(language);
+            // "About as good" also reads the situation, so it is left out.
+            let judged: Vec<String> = [Judgement::Best, Judgement::Worse, Judgement::Weak]
+                .into_iter()
+                .map(|j| judgement(&i18n, j))
+                .collect();
             for (view, e) in &all {
-                let with = joined(&explanation(&i18n, view, e, true));
-                let without = joined(&explanation(&i18n, view, e, false));
-                // The verbal reasoning stays: same sections, same reasons.
-                let headings = |figures| {
-                    explanation(&i18n, view, e, figures)
-                        .into_iter()
-                        .filter(|l| l.style != Style::Weak)
-                        .count()
-                };
-                assert_eq!(headings(true), headings(false));
-                assert!(without.contains(&i18n.t("coach-section-options")));
-                // No estimated figure leaks: no percentages, no ±, none of
-                // the formatted estimates.
-                assert!(
-                    !without.contains('%') && !without.contains('±'),
-                    "{without}"
-                );
-                assert!(with.contains('%'));
-                for o in &e.options {
-                    if let Some(est) = o.estimate {
-                        assert!(!without.contains(&percent(est.win_chance)));
-                        assert!(!without.contains(&points(est.expected_score)));
+                for stage in [Stage::Considerations, Stage::Situation, Stage::Figures] {
+                    let text = joined(&hints(&i18n, view, &model::hints(e, stage), true));
+                    for j in &judged {
+                        assert!(!text.contains(j.as_str()), "{stage:?}: {text}");
                     }
-                }
-                for c in &e.considerations {
-                    if let Consideration::Inferred(i) = c
-                        && !i.inference.certain
-                    {
-                        assert!(!without.contains(&format!("{:.1}", i.inference.expected)));
+                    if stage == Stage::Considerations {
+                        // No option is named before the situation stage.
+                        for &a in &view.legal_actions {
+                            assert!(!text.contains(&format!("• {}", action(&i18n, view, a))));
+                        }
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn hidden_figures_keep_the_reasoning_without_estimates() {
+        let all = explanations();
+        assert!(all.len() >= 5, "{}", all.len());
+        let mut moments = 0;
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            for (view, e) in &all {
+                let with = rendered(&i18n, view, e, true);
+                let without = rendered(&i18n, view, e, false);
+                moments += with.last().map_or(0, Vec::len);
+                for (with, without) in with.iter().zip(&without) {
+                    // The verbal reasoning stays: same headings and reasons
+                    // (the figures stage falls back to the plain options).
+                    let headings =
+                        |lines: &[Line]| lines.iter().filter(|l| l.style == Style::Heading).count();
+                    assert_eq!(headings(with), headings(without));
+                    let without = joined(without);
+                    // No estimated figure leaks: no percentages, no ±, none
+                    // of the formatted estimates.
+                    assert!(
+                        !without.contains('%') && !without.contains('±'),
+                        "{without}"
+                    );
+                    for o in &e.options {
+                        if let Some(est) = o.estimate {
+                            assert!(!without.contains(&percent(est.win_chance)));
+                            assert!(!without.contains(&points(est.expected_score)));
+                        }
+                    }
+                    for c in &e.considerations {
+                        if let Consideration::Inferred(i) = c
+                            && !i.inference.certain
+                        {
+                            assert!(!without.contains(&format!("{:.1}", i.inference.expected)));
+                        }
+                    }
+                }
+                let figures_stage = joined(&with[2]);
+                assert!(
+                    figures_stage.contains('%') || e.options.iter().all(|o| o.estimate.is_none())
+                );
+            }
+        }
+        assert!(moments > 0, "some debriefing was rendered");
     }
 }
