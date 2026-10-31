@@ -32,7 +32,7 @@ use crate::analysis::{Analysis, CardClass, Inference, Observation, Status, utili
 use crate::mechanism::{Mechanism, MechanismKind, mechanisms};
 
 /// Version of this contract; raised when the meaning of a field changes.
-pub const CONTRACT_VERSION: u16 = 3;
+pub const CONTRACT_VERSION: u16 = 4;
 
 /// The deciding seat's role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -95,6 +95,8 @@ pub struct Snapshot {
     pub game: Option<GameType>,
     /// Bidding calls made before the decision.
     pub bids: u16,
+    /// Bidding calls the deciding seat made before the decision.
+    pub own_calls: u16,
     /// Completed tricks.
     pub tricks: u8,
     /// Cards in the trick in progress.
@@ -116,6 +118,7 @@ impl Snapshot {
             role: Role::of(view),
             game: view.contract.map(|c| c.game),
             bids: view.bidding.len() as u16,
+            own_calls: view.bidding.iter().filter(|r| r.seat == view.seat).count() as u16,
             tricks: view.tricks.len() as u8,
             trick_cards: view.current_trick.len() as u8,
             own: view.hand,
@@ -290,7 +293,23 @@ fn sources(view: &PlayerView, observation: &Observation) -> Vec<Source> {
             first_bid(&view.bidding, seat, value).into_iter().collect()
         }
         Observation::KontraEligible { .. } => vec![Source::Bidding, Source::Rules],
+        Observation::Structure(_) => own_cards(view),
+        Observation::GameValues(_) => {
+            let mut out = own_cards(view);
+            out.push(Source::Rules);
+            out
+        }
+        Observation::Commitment { .. } => vec![Source::Bidding, Source::Rules],
     }
+}
+
+/// The own hand, and the own discarded Skat once known.
+fn own_cards(view: &PlayerView) -> Vec<Source> {
+    let mut out = vec![Source::OwnHand];
+    if view.own_skat.is_some() {
+        out.push(Source::OwnSkat);
+    }
+    out
 }
 
 /// Every card played so far as (trick index, seat, led card, card), in
@@ -474,6 +493,12 @@ pub enum FactKind {
     BidShown,
     /// [`Observation::KontraEligible`].
     KontraEligible,
+    /// [`Observation::Structure`].
+    Structure,
+    /// [`Observation::GameValues`].
+    GameValues,
+    /// [`Observation::Commitment`].
+    Commitment,
 }
 
 impl FactKind {
@@ -488,6 +513,9 @@ impl FactKind {
             Observation::SkatKnown { .. } => FactKind::SkatKnown,
             Observation::BidShown { .. } => FactKind::BidShown,
             Observation::KontraEligible { .. } => FactKind::KontraEligible,
+            Observation::Structure(_) => FactKind::Structure,
+            Observation::GameValues(_) => FactKind::GameValues,
+            Observation::Commitment { .. } => FactKind::Commitment,
         }
     }
 }
@@ -513,6 +541,8 @@ pub enum Condition {
     Revealed,
     /// The analysis finished.
     Complete,
+    /// A bidding decision before the deciding seat's own first call.
+    OpeningCall,
     /// The comparison of the chosen option carries an exact mechanism of
     /// this kind (needs [`EvidenceClass::Mechanism`] permitted; after the
     /// move only). Cites no evidence item.
@@ -683,6 +713,10 @@ impl Lesson {
             Condition::OwnSkat => evidence.snapshot.own_skat.map(|_| Vec::new()),
             Condition::Revealed => evidence.snapshot.revealed.map(|_| Vec::new()),
             Condition::Complete => (evidence.status == Status::Complete).then(Vec::new),
+            Condition::OpeningCall => {
+                let s = &evidence.snapshot;
+                (s.phase == Phase::Reizen && s.own_calls == 0).then(Vec::new)
+            }
             Condition::Mechanism(kind) => (self.permitted.contains(&EvidenceClass::Mechanism)
                 && comparison.is_some_and(|c| c.mechanisms.iter().any(|m| m.kind() == kind)))
             .then(Vec::new),
@@ -704,8 +738,17 @@ pub const TRUMPF_VULNERABILITY: &str = "trumpf-vulnerability";
 /// ([`catalogue`], [`crate::mechanism::Overtake`]).
 pub const PARTNER_OVERTAKE: &str = "partner-overtake";
 
+/// Key of the lesson on the values the game can have and the value it must
+/// reach ([`catalogue`], [`crate::preplay`]).
+pub const GAME_VALUE: &str = "game-value";
+
+/// Key of the lesson on the own Buben, Trumpf and Spitzen per candidate
+/// game ([`catalogue`], [`crate::preplay`]).
+pub const HAND_STRUCTURE: &str = "hand-structure";
+
 /// The lesson catalogue, in selection order (`docs/coach.md`). Backed by
-/// the fixtures in `tests/exact_lessons.rs` and `tests/mechanisms.rs`:
+/// the fixtures in `tests/exact_lessons.rs`, `tests/mechanisms.rs` and
+/// `tests/preplay.rs`:
 ///
 /// 1. [`TRUMPF_VULNERABILITY`] (mechanism): after the seat's Ass or Zehn of
 ///    the led side suit, winning so far, an opponent playing later in the
@@ -722,6 +765,15 @@ pub const PARTNER_OVERTAKE: &str = "partner-overtake";
 ///    the last completed trick; where the Trumpf are, as far as the seat
 ///    knows (Farbspiel and Grand; Null has no Trumpf). Unseen Trumpf are
 ///    not assigned to a seat.
+///
+/// 5. [`GAME_VALUE`]: before card play, from the seat's second bidding call
+///    on and when deciding Hand or pickup or announcing: the value range of
+///    each contract with the own cards (an unknown Skat counts for the
+///    Spitzen) and the value the game must reach to avoid Überreizen.
+/// 6. [`HAND_STRUCTURE`]: at the seat's first bidding call and when
+///    discarding: own Buben, Trumpf and Spitzen per Farbspiel and Grand.
+///
+/// Neither names a game, bid or discard as better; both are exact.
 ///
 /// Mechanisms apply after the move only, with a reliable comparison, and
 /// never because the chosen option scored higher: they need the exact
@@ -746,6 +798,22 @@ pub fn catalogue() -> Vec<Lesson> {
         permitted: vec![EvidenceClass::Exact],
         requires: vec![Condition::Recent(kind)],
         excludes: Vec::new(),
+    };
+    let pre_play = |key: &'static str, phases, requires, excludes| Lesson {
+        id: LessonId {
+            key: Cow::Borrowed(key),
+            version: 1,
+        },
+        kind: LessonKind::Fact,
+        support: Support::Supported,
+        applies: Applicability {
+            phases,
+            roles: vec![Role::Bidder, Role::Declarer],
+            games: Vec::new(),
+        },
+        permitted: vec![EvidenceClass::Exact],
+        requires,
+        excludes,
     };
     let mechanism = |roles: Vec<Role>, kind: MechanismKind| Lesson {
         id: LessonId {
@@ -778,5 +846,20 @@ pub fn catalogue() -> Vec<Lesson> {
             FactKind::Void,
         ),
         card_play(vec![GameKind::Suit, GameKind::Grand], FactKind::TrumpfSets),
+        pre_play(
+            GAME_VALUE,
+            vec![Phase::Reizen, Phase::SkatAufnahme, Phase::Ansage],
+            vec![
+                Condition::Fact(FactKind::GameValues),
+                Condition::Fact(FactKind::Commitment),
+            ],
+            vec![Condition::OpeningCall],
+        ),
+        pre_play(
+            HAND_STRUCTURE,
+            vec![Phase::Reizen, Phase::Druecken],
+            vec![Condition::Fact(FactKind::Structure)],
+            Vec::new(),
+        ),
     ]
 }

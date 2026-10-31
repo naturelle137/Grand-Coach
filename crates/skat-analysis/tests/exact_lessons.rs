@@ -13,8 +13,9 @@ mod common;
 
 use common::*;
 use skat_analysis::lesson::{
-    CONTRACT_VERSION, Check, Claim, Condition, Evidence, EvidenceClass, FactKind, GameKind,
-    LessonKind, PROVEN_VOID, REMAINING_TRUMPF, Source, Support, Unmet, catalogue, gather,
+    CONTRACT_VERSION, Check, Claim, Condition, Evidence, EvidenceClass, FactKind, GAME_VALUE,
+    GameKind, HAND_STRUCTURE, LessonKind, PROVEN_VOID, REMAINING_TRUMPF, Source, Support, Unmet,
+    catalogue, gather,
 };
 use skat_analysis::{Budget, Knowledge, Observation, Status, TrumpfSets, analyze};
 use skat_core::{
@@ -143,8 +144,12 @@ fn the_catalogue_holds_two_exact_card_play_lessons() {
         .filter(|l| l.kind == LessonKind::Fact)
         .collect();
     let keys: Vec<&str> = all.iter().map(|l| l.id.key.as_ref()).collect();
-    assert_eq!(keys, [PROVEN_VOID, REMAINING_TRUMPF]);
-    for l in &all {
+    // The pre-play lessons (#45) follow; `tests/preplay.rs` covers them.
+    assert_eq!(
+        keys,
+        [PROVEN_VOID, REMAINING_TRUMPF, GAME_VALUE, HAND_STRUCTURE]
+    );
+    for l in &all[..2] {
         assert_eq!(l.id.version, 1);
         assert_eq!(l.kind, LessonKind::Fact);
         assert_eq!(l.support, Support::Supported);
@@ -161,7 +166,7 @@ fn the_catalogue_holds_two_exact_card_play_lessons() {
         lesson(REMAINING_TRUMPF).applies.games,
         [GameKind::Suit, GameKind::Grand]
     );
-    assert_eq!(CONTRACT_VERSION, 3);
+    assert_eq!(CONTRACT_VERSION, 4);
 }
 
 #[test]

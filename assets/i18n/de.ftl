@@ -281,6 +281,9 @@ coach-fact-skat-known = Im Skat liegen: { $cards }.
 coach-fact-bid-shown = { $player } hat bis { $value } gereizt.
 coach-fact-kontra-eligible = { $player } darf noch Kontra sagen.
 coach-fact-trumpf-unseen = { $count } Trumpf hast du noch nicht gesehen.
+coach-fact-structure = { $game }: Du hast { $count } Trumpf.
+coach-fact-game-values = { $game }: mögliche Spielwerte { $value }.
+coach-fact-commitment = Das Spiel muss mindestens { $value } wert sein.
 coach-section-lesson = Worauf achten?
 coach-section-lesson-review = Was sicher feststeht
 coach-lesson-class-trumpf = Trumpf
@@ -346,6 +349,56 @@ coach-lesson-partner-overtake-rule = { $case ->
     }
 coach-lesson-partner-overtake-exception = Achtung: Schlagen können heißt nicht schlagen werden. Über spätere Stiche und darüber, welche Karte du hättest spielen sollen, sagt das nichts.
 coach-lesson-partner-overtake-transfer = Wenn der Alleinspieler ausspielt und dein Partner hinter dir sitzt: Mit welchen Karten kann er die Karte des Alleinspielers noch schlagen?
+coach-lesson-spitzen = { $case ->
+        [mit] mit { $count }
+       *[ohne] ohne { $count }
+    }
+coach-lesson-preplay-model = Die Bewertung deines Zugs oben ist eine grobe Modellschätzung: Vor dem Kartenspiel simuliert das Modell nur wenige Verteilungen, und darin spielen alle so, als sähen sie alle Karten.
+coach-lesson-hand-structure-question = Für jede Farbe und für Grand: Welche Buben und wie viele Trumpf hast du – und mit oder ohne wie viele?
+coach-lesson-hand-structure-game = { $game }: { $kind ->
+        [grand] { $count } Buben
+       *[suit] { $count } Trumpf
+    } ({ $cards }), { $value }.
+coach-lesson-hand-structure-discarded = Davon in deinem gedrückten Skat: { $count } ({ $cards }). Sie zählen für die Spitzen, werden aber nicht gespielt.
+coach-lesson-hand-structure-range = { $case ->
+        [fixed] Der unbekannte Skat kann diese Spitzen nicht ändern.
+       *[range] Mit dem unbekannten Skat: { $min } bis { $max } Spitzen möglich (mit oder ohne), bis zu { $count } { $kind ->
+            [grand] Buben
+           *[suit] Trumpf
+        }.
+    }
+coach-lesson-hand-structure-skat = { $skat ->
+        [unknown] Der Skat ist unbekannt. Seine zwei Karten zählen für die Spitzen des Alleinspielers (auch im Handspiel), die Spitzen können sich also noch ändern.
+        [held] Du hast zwölf Karten. Die Spitzen zählen alle zwölf, auch die zwei, die du drückst; gespielt werden nur die zehn, die du behältst.
+       *[discarded] Die zwei gedrückten Karten zählen weiter für die Spitzen, werden aber nicht gespielt.
+    }
+coach-lesson-hand-structure-exception = Achtung: Diese Zählung beschreibt deine Karten. Ob ein Spiel gewonnen wird, welches Spiel du spielen, wie hoch du reizen oder was du drücken solltest, folgt daraus nicht.
+coach-lesson-hand-structure-transfer = Beim nächsten Blatt: Welche Buben und wie viele Trumpf hast du für jede Farbe und für Grand – und mit oder ohne wie viele?
+coach-lesson-game-value-question = Was ist jedes deiner möglichen Spiele mit deinen Karten wert – und was kann der unbekannte Skat noch ändern?
+coach-lesson-game-value-bid = { $case ->
+        [call] Wer hier reizt oder hält, legt sich auf mindestens { $value } fest.
+       *[declarer] Gereizt ist { $value }.
+    } Ein Spiel, das weniger wert ist, ist überreizt und verloren (ISkO), egal wie viele Augen du bekommst.
+coach-lesson-game-value-game = { $game }: { $value }
+coach-lesson-game-value-entry = { $kind ->
+        [plain] mit Skataufnahme
+        [hand] Hand
+        [ouvert] Ouvert
+       *[handouvert] Hand Ouvert
+    } { $value } ({ $case ->
+        [reached] reicht
+        [skat] nur mit passendem Skat
+        [play] nur mit Schneider oder Schwarz im Spiel
+       *[never] reicht nie
+    })
+coach-lesson-game-value-skat = { $skat ->
+        [unknown] Der Skat ist unbekannt: Seine Karten zählen für die Spitzen, ein Bereich reicht also vom niedrigsten bis zum höchsten Wert, den ein Skat ergeben kann.
+       *[known] Du kennst den Skat: Die Spitzen und damit diese Werte stehen fest.
+    }
+coach-lesson-game-value-levels = Werte ohne erspielten Schneider oder Schwarz. Jede erspielte Stufe zählt eine Stufe mehr, jede angesagte (nur Hand) zwei. Ouvert im Farbspiel oder Grand geht nur Hand mit angesagtem Schneider und Schwarz; Null hat feste Werte.
+coach-lesson-game-value-kontra = Kontra und Re verdoppeln die notierten Punkte, nicht den Spielwert: Ob der Reizwert erreicht ist, ändern sie nicht.
+coach-lesson-game-value-exception = Achtung: Erreicht ein Spiel den Reizwert, ist nur das Überreizen ausgeschlossen. Ob du gewinnst, folgt daraus nicht, und kein Spiel und kein Reizwert wird hier als besser genannt.
+coach-lesson-game-value-transfer = Beim nächsten Reizwert: Welche deiner Spiele erreichen ihn sicher – und welche nur mit passendem Skat?
 coach-holder-skat = Der Skat
 coach-class-trumps = Trümpfe
 coach-class-jacks = Buben
