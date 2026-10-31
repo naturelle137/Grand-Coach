@@ -59,6 +59,13 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("coach-lesson-abstich", coach_lesson_abstich),
     ("coach-lesson-abstich-en", coach_lesson_abstich_en),
     ("coach-lesson-overtake", coach_lesson_overtake),
+    ("coach-lesson-structure", coach_lesson_structure),
+    (
+        "coach-lesson-structure-review",
+        coach_lesson_structure_review,
+    ),
+    ("coach-lesson-value-review", coach_lesson_value_review),
+    ("coach-lesson-value-review-en", coach_lesson_value_review_en),
     ("coach-debriefing", coach_debriefing),
     ("coach-debriefing-details", coach_debriefing_details),
     ("coach-debriefing-en", coach_debriefing_en),
@@ -249,6 +256,83 @@ fn coach_lesson_overtake(harness: &mut Harness<'_, GrandCoachApp>) {
         },
         |l| matches!(l, LessonContent::PartnerOvertake { .. }),
     );
+}
+
+/// A smaller coach budget for the bidding scenarios: analyses before card
+/// play simulate whole games and are slow in a debug build.
+const PRE_PLAY: Budget = Budget {
+    samples: 4,
+    nodes_per_task: 2_000_000,
+};
+
+/// The human's first bidding call with the hints requested (#45): the
+/// hand-structure question, no answer and no call named.
+fn coach_lesson_structure(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach_budget(PRE_PLAY);
+    settle(harness);
+    assert!(view(harness).legal_actions.contains(&Action::Pass));
+    click(harness, Role::Button, "Was soll ich bedenken?");
+    await_coach(harness, |view| {
+        matches!(&view.coach.advice, Advice::Ready(h) | Advice::Provisional(h)
+            if matches!(h.lesson, Some(LessonContent::HandStructure { .. })))
+    });
+}
+
+/// The note after passing at the first call: the own Buben, Trumpf and
+/// Spitzen per candidate game, with what the unknown Skat can change.
+fn coach_lesson_structure_review(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_lesson_structure(harness);
+    click(harness, Role::Button, "Passe");
+    await_lesson(harness, |l| {
+        matches!(l, LessonContent::HandStructure { .. })
+    });
+}
+
+/// The note after the human's second bidding decision (or the pickup
+/// decision as declarer): the game values against the value to reach.
+/// The human first bids or holds the lowest value, then passes or picks
+/// up the Skat.
+fn coach_lesson_value_review(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach_budget(PRE_PLAY);
+    settle(harness);
+    let v = view(harness);
+    let first = if v.legal_actions.contains(&Action::Hold) {
+        format!("Ja, {} halten", v.bid)
+    } else {
+        let lowest = v.legal_actions.iter().find_map(|a| match a {
+            Action::Bid(value) => Some(*value),
+            _ => None,
+        });
+        format!("{} sagen", lowest.expect("a bid"))
+    };
+    click(harness, Role::Button, &first);
+    settle(harness);
+    let v = view(harness);
+    let second = if v.legal_actions.contains(&Action::TakeSkat) {
+        "Skat aufnehmen"
+    } else {
+        "Passe"
+    };
+    click(harness, Role::Button, second);
+    await_lesson(harness, |l| matches!(l, LessonContent::GameValue { .. }));
+}
+
+/// The same in English.
+fn coach_lesson_value_review_en(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_lesson_value_review(harness);
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(4);
+}
+
+/// Runs frames until the note on the last move carries a lesson `wanted`.
+fn await_lesson(harness: &mut Harness<'_, GrandCoachApp>, wanted: impl Fn(&LessonContent) -> bool) {
+    await_coach(harness, |view| {
+        view.coach
+            .last_move
+            .as_ref()
+            .and_then(|m| m.lesson.as_ref())
+            .is_some_and(&wanted)
+    });
 }
 
 /// The human's legal cards in the view's order.

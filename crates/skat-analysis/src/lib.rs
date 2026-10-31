@@ -14,7 +14,8 @@
 //!   [`Budget`],
 //! - simple hand measures ([`hand`]),
 //! - the evidence contract for coach lessons ([`lesson`]) and the exact
-//!   card-play mechanisms they may cite ([`mechanism`]).
+//!   card-play mechanisms they may cite ([`mechanism`]), and the exact
+//!   pre-play hand structure and game values ([`preplay`]).
 //!
 //! Semantics, budgets and measured latency: `docs/analysis.md`.
 
@@ -27,6 +28,7 @@ mod knowledge;
 pub mod lesson;
 pub mod mechanism;
 pub mod policy;
+pub mod preplay;
 pub mod sampling;
 mod trick;
 

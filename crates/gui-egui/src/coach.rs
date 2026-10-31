@@ -11,9 +11,9 @@
 
 use skat_app::coach_model::{
     Abstich, Amount, Assumption, Basis, CardClass, Certainty, ComparedOption, Consideration,
-    Decision, Estimate, Follow, Hints, Judgement, LessonContent, Moment, MomentKind, MoveReview,
-    Note, Objective, Observation, Overtake, Place, Reason, Role, Situation, Stage, TrumpfSets,
-    Warning,
+    ContractValue, Decision, Estimate, Follow, Hints, Judgement, LessonContent, Moment, MomentKind,
+    MoveReview, Note, Objective, Observation, Overtake, Place, Range, Reach, Reason, Role,
+    Situation, SkatState, Spitzen, Stage, Structure, TrumpfSets, Warning,
 };
 use skat_app::{
     Action, CardSet, Contract, Debriefing, GameType, LastMove, PlayerId, Seat, TableView,
@@ -212,6 +212,35 @@ fn fact(i18n: &I18n, view: &TableView, o: Observation) -> String {
             "coach-fact-trumpf-unseen",
             &[("count", sets.unseen.len().into())],
         ),
+        Observation::Structure(s) => i18n.tf(
+            "coach-fact-structure",
+            &[
+                ("game", text::game_type(i18n, s.game).into()),
+                ("count", s.trumpf.len().into()),
+            ],
+        ),
+        Observation::GameValues(v) => {
+            let ranges: Vec<String> = v.contracts().iter().map(|&(_, r)| range(r)).collect();
+            i18n.tf(
+                "coach-fact-game-values",
+                &[
+                    ("game", text::game_type(i18n, v.game).into()),
+                    ("value", ranges.join(", ").into()),
+                ],
+            )
+        }
+        Observation::Commitment { value, .. } => {
+            i18n.tf("coach-fact-commitment", &[("value", value.into())])
+        }
+    }
+}
+
+/// A value range: one number if fixed, otherwise lowest to highest.
+fn range(r: Range) -> String {
+    if r.fixed() {
+        r.low.to_string()
+    } else {
+        format!("{}–{}", r.low, r.high)
     }
 }
 
@@ -230,6 +259,8 @@ fn lesson_question(i18n: &I18n, lesson: &LessonContent) -> Vec<Line> {
     let id = match lesson {
         LessonContent::RemainingTrumpf { .. } => "coach-lesson-remaining-trumpf-question",
         LessonContent::ProvenVoid { .. } => "coach-lesson-proven-void-question",
+        LessonContent::HandStructure { .. } => "coach-lesson-hand-structure-question",
+        LessonContent::GameValue { .. } => "coach-lesson-game-value-question",
         LessonContent::TrumpfVulnerability { .. } | LessonContent::PartnerOvertake { .. } => {
             return Vec::new();
         }
@@ -244,9 +275,10 @@ fn lesson_question(i18n: &I18n, lesson: &LessonContent) -> Vec<Line> {
 /// exception and the transfer question.
 pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line> {
     let heading = match lesson {
-        LessonContent::RemainingTrumpf { .. } | LessonContent::ProvenVoid { .. } => {
-            "coach-section-lesson-review"
-        }
+        LessonContent::RemainingTrumpf { .. }
+        | LessonContent::ProvenVoid { .. }
+        | LessonContent::HandStructure { .. }
+        | LessonContent::GameValue { .. } => "coach-section-lesson-review",
         LessonContent::TrumpfVulnerability { .. } | LessonContent::PartnerOvertake { .. } => {
             "coach-section-lesson-mechanism"
         }
@@ -262,6 +294,14 @@ pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line
         LessonContent::RemainingTrumpf { game, sets } => {
             out.extend(remaining_trumpf(i18n, *game, sets));
         }
+        LessonContent::HandStructure { games } => out.extend(hand_structure(i18n, games)),
+        LessonContent::GameValue {
+            value,
+            bidding,
+            kontra_re,
+            skat,
+            games,
+        } => out.extend(game_value(i18n, *value, *bidding, *kontra_re, *skat, games)),
         LessonContent::ProvenVoid { game, voids } => {
             let name = |seat: Seat| text::player(i18n, seat_player(view, seat));
             let mut tail: Vec<Line> = Vec::new();
@@ -315,6 +355,200 @@ pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line
             out.extend(tail);
         }
     }
+    out
+}
+
+fn skat_state(skat: SkatState) -> &'static str {
+    match skat {
+        SkatState::Unknown => "unknown",
+        SkatState::Held => "held",
+        SkatState::Discarded => "discarded",
+    }
+}
+
+fn spitzen(i18n: &I18n, s: Spitzen) -> String {
+    i18n.tf(
+        "coach-lesson-spitzen",
+        &[
+            ("case", if s.mit { "mit" } else { "ohne" }.into()),
+            ("count", s.count.into()),
+        ],
+    )
+}
+
+/// Cards in display order of `game`, or a dash for none.
+fn cards_or_dash(i18n: &I18n, cards: CardSet, game: GameType) -> String {
+    if cards.is_empty() {
+        "–".to_owned()
+    } else {
+        card_list(i18n, cards, game)
+    }
+}
+
+/// The hand-structure lesson: per candidate game the own Buben or Trumpf
+/// and Spitzen, what an unknown Skat can change, the exception, the model
+/// limitation of the note and the transfer question.
+fn hand_structure(i18n: &I18n, games: &[Structure]) -> Vec<Line> {
+    let mut out = Vec::new();
+    for s in games {
+        let kind = if s.game == GameType::Grand {
+            "grand"
+        } else {
+            "suit"
+        };
+        out.push(line(
+            i18n.tf(
+                "coach-lesson-hand-structure-game",
+                &[
+                    ("game", text::game_type(i18n, s.game).into()),
+                    ("kind", kind.into()),
+                    ("count", s.trumpf.len().into()),
+                    ("cards", cards_or_dash(i18n, s.trumpf, s.game).into()),
+                    ("value", spitzen(i18n, s.spitzen).into()),
+                ],
+            ),
+            Style::Normal,
+        ));
+        if !s.skat_trumpf.is_empty() {
+            out.push(line(
+                i18n.tf(
+                    "coach-lesson-hand-structure-discarded",
+                    &[
+                        ("count", s.skat_trumpf.len().into()),
+                        ("cards", card_list(i18n, s.skat_trumpf, s.game).into()),
+                    ],
+                ),
+                Style::Normal,
+            ));
+        }
+        if s.skat == SkatState::Unknown {
+            out.push(line(
+                i18n.tf(
+                    "coach-lesson-hand-structure-range",
+                    &[
+                        ("kind", kind.into()),
+                        (
+                            "case",
+                            if s.counts.fixed() { "fixed" } else { "range" }.into(),
+                        ),
+                        ("min", s.counts.low.into()),
+                        ("max", s.counts.high.into()),
+                        ("count", s.trumpf_most.into()),
+                    ],
+                ),
+                Style::Normal,
+            ));
+        }
+    }
+    if let Some(first) = games.first() {
+        out.push(line(
+            i18n.tf(
+                "coach-lesson-hand-structure-skat",
+                &[("skat", skat_state(first.skat).into())],
+            ),
+            Style::Normal,
+        ));
+    }
+    out.push(line(
+        i18n.t("coach-lesson-hand-structure-exception"),
+        Style::Normal,
+    ));
+    out.push(line(i18n.t("coach-lesson-preplay-model"), Style::Normal));
+    out.push(line(
+        i18n.t("coach-lesson-hand-structure-transfer"),
+        Style::Strong,
+    ));
+    out
+}
+
+fn reach(r: Reach) -> &'static str {
+    match r {
+        Reach::Reached => "reached",
+        Reach::Skat => "skat",
+        Reach::Play => "play",
+        Reach::Never => "never",
+    }
+}
+
+/// The game-value lesson: the value to reach, per game type each contract
+/// with its value range and how it relates, the levels and Kontra/Re, the
+/// exception, the model limitation of the note and the transfer question.
+fn game_value(
+    i18n: &I18n,
+    value: u16,
+    bidding: bool,
+    kontra_re: bool,
+    skat: SkatState,
+    games: &[(GameType, Vec<ContractValue>)],
+) -> Vec<Line> {
+    let mut out = vec![line(
+        i18n.tf(
+            "coach-lesson-game-value-bid",
+            &[
+                ("case", if bidding { "call" } else { "declarer" }.into()),
+                ("value", value.into()),
+            ],
+        ),
+        Style::Strong,
+    )];
+    for (game, contracts) in games {
+        let entries: Vec<String> = contracts
+            .iter()
+            .map(|c| {
+                let kind = match (c.contract.hand, c.contract.ouvert) {
+                    (false, false) => "plain",
+                    (true, false) => "hand",
+                    (false, true) => "ouvert",
+                    (true, true) => "handouvert",
+                };
+                i18n.tf(
+                    "coach-lesson-game-value-entry",
+                    &[
+                        ("kind", kind.into()),
+                        ("value", range(c.range).into()),
+                        ("case", reach(c.reach).into()),
+                    ],
+                )
+            })
+            .collect();
+        out.push(line(
+            i18n.tf(
+                "coach-lesson-game-value-game",
+                &[
+                    ("game", text::game_type(i18n, *game).into()),
+                    ("value", entries.join(" · ").into()),
+                ],
+            ),
+            Style::Normal,
+        ));
+    }
+    let skat = match skat {
+        SkatState::Unknown => "unknown",
+        SkatState::Held | SkatState::Discarded => "known",
+    };
+    out.push(line(
+        i18n.tf("coach-lesson-game-value-skat", &[("skat", skat.into())]),
+        Style::Normal,
+    ));
+    out.push(line(
+        i18n.t("coach-lesson-game-value-levels"),
+        Style::Normal,
+    ));
+    if kontra_re {
+        out.push(line(
+            i18n.t("coach-lesson-game-value-kontra"),
+            Style::Normal,
+        ));
+    }
+    out.push(line(
+        i18n.t("coach-lesson-game-value-exception"),
+        Style::Normal,
+    ));
+    out.push(line(i18n.t("coach-lesson-preplay-model"), Style::Normal));
+    out.push(line(
+        i18n.t("coach-lesson-game-value-transfer"),
+        Style::Strong,
+    ));
     out
 }
 
@@ -1310,6 +1544,7 @@ mod tests {
                     role: Role::Defender,
                     game: None,
                     bids: 3,
+                    own_calls: 1,
                     tricks: 4,
                     trick_cards: 1,
                     own: Default::default(),
@@ -1796,5 +2031,164 @@ mod tests {
                 "Rule (ISkO): {p} must follow with a trump if possible; only a higher trump wins."
             )
         );
+    }
+
+    /// MH's opening call in the `skat-analysis` fixture deal: CJ HJ HA HT
+    /// HK H9 H7 SA S7 D7, Skat unknown (hand-made from its comments).
+    fn opening_structures() -> Vec<Structure> {
+        let set = |cards: &[Card]| cards.iter().copied().collect::<CardSet>();
+        let bube = |s| Card::new(s, Rank::Bube);
+        let buben = set(&[bube(Suit::Kreuz), bube(Suit::Herz)]);
+        let herz: Vec<Card> = [
+            Rank::Ass,
+            Rank::Zehn,
+            Rank::Koenig,
+            Rank::Neun,
+            Rank::Sieben,
+        ]
+        .into_iter()
+        .map(|r| Card::new(Suit::Herz, r))
+        .collect();
+        let s = |game, trumpf: CardSet, high, trumpf_most| Structure {
+            game,
+            skat: SkatState::Unknown,
+            buben,
+            trumpf,
+            skat_trumpf: CardSet::EMPTY,
+            spitzen: Spitzen {
+                mit: true,
+                count: 1,
+            },
+            counts: Range { low: 1, high },
+            trumpf_most,
+        };
+        vec![
+            s(GameType::Farbe(Suit::Herz), buben | set(&herz), 7, 9),
+            s(GameType::Grand, buben, 4, 4),
+        ]
+    }
+
+    #[test]
+    fn hand_structure_lesson_counts_every_candidate_and_names_no_choice() {
+        let view = table();
+        let lesson = LessonContent::HandStructure {
+            games: opening_structures(),
+        };
+        let de = I18n::new(Language::De);
+        assert_eq!(
+            texts(&super::lesson(&de, &view, &lesson)),
+            [
+                "Was sicher feststeht",
+                "Herz: 7 Trumpf (Kreuz-Bube, Herz-Bube, Herz-Ass, Herz-Zehn, Herz-König, Herz-Neun, Herz-Sieben), mit 1.",
+                "Mit dem unbekannten Skat: 1 bis 7 Spitzen möglich (mit oder ohne), bis zu 9 Trumpf.",
+                "Grand: 2 Buben (Kreuz-Bube, Herz-Bube), mit 1.",
+                "Mit dem unbekannten Skat: 1 bis 4 Spitzen möglich (mit oder ohne), bis zu 4 Buben.",
+                "Der Skat ist unbekannt. Seine zwei Karten zählen für die Spitzen des Alleinspielers (auch im Handspiel), die Spitzen können sich also noch ändern.",
+                "Achtung: Diese Zählung beschreibt deine Karten. Ob ein Spiel gewonnen wird, welches Spiel du spielen, wie hoch du reizen oder was du drücken solltest, folgt daraus nicht.",
+                "Die Bewertung deines Zugs oben ist eine grobe Modellschätzung: Vor dem Kartenspiel simuliert das Modell nur wenige Verteilungen, und darin spielen alle so, als sähen sie alle Karten.",
+                "Beim nächsten Blatt: Welche Buben und wie viele Trumpf hast du für jede Farbe und für Grand – und mit oder ohne wie viele?",
+            ]
+        );
+        // Held after pickup, Spitzen fixed, a Trumpf in the own Skat.
+        let mut games = opening_structures();
+        for g in &mut games {
+            g.skat = SkatState::Discarded;
+            g.counts.high = 1;
+            g.skat_trumpf = CardSet::single(Card::new(Suit::Karo, Rank::Bube));
+        }
+        let en = I18n::new(Language::En);
+        let text = super::lesson(&en, &view, &LessonContent::HandStructure { games });
+        let text = texts(&text);
+        assert_eq!(
+            text[2],
+            "Of these, in the Skat you discarded: 1 (Jack of Diamonds). They count for the matadors but cannot be played."
+        );
+        assert!(!text.iter().any(|t| t.contains("unknown Skat")), "{text:?}");
+        // Before the move only the question: no counts, no option.
+        let question = texts(&lesson_question(&de, &lesson)).join(" ");
+        assert!(!question.chars().any(|c| c.is_ascii_digit()), "{question}");
+    }
+
+    #[test]
+    fn game_value_lesson_states_the_rule_and_every_contract() {
+        let view = table();
+        let herz = GameType::Farbe(Suit::Herz);
+        let entry = |contract, low, high, reach| ContractValue {
+            contract,
+            range: Range { low, high },
+            reach,
+        };
+        let plain = |g| Contract::new(skat_app::Announcement::plain(g), false);
+        let hand = |g| Contract::new(skat_app::Announcement::plain(g), true);
+        let null_ouvert = |h| {
+            Contract::new(
+                skat_app::Announcement {
+                    ouvert: true,
+                    ..skat_app::Announcement::plain(GameType::Null)
+                },
+                h,
+            )
+        };
+        // MH declarer at 48 deciding Hand or pickup (fixture comments).
+        let lesson = |kontra_re| LessonContent::GameValue {
+            value: 48,
+            bidding: false,
+            kontra_re,
+            skat: SkatState::Unknown,
+            games: vec![
+                (
+                    herz,
+                    vec![
+                        entry(plain(herz), 20, 80, Reach::Skat),
+                        entry(hand(herz), 30, 90, Reach::Skat),
+                    ],
+                ),
+                (
+                    GameType::Grand,
+                    vec![entry(plain(GameType::Grand), 48, 120, Reach::Reached)],
+                ),
+                (
+                    GameType::Null,
+                    vec![
+                        entry(plain(GameType::Null), 23, 23, Reach::Never),
+                        entry(null_ouvert(true), 59, 59, Reach::Reached),
+                    ],
+                ),
+            ],
+        };
+        let de = I18n::new(Language::De);
+        let text = super::lesson(&de, &view, &lesson(false));
+        assert_eq!(
+            texts(&text)[..5],
+            [
+                "Was sicher feststeht",
+                "Gereizt ist 48. Ein Spiel, das weniger wert ist, ist überreizt und verloren (ISkO), egal wie viele Augen du bekommst.",
+                "Herz: mit Skataufnahme 20–80 (nur mit passendem Skat) · Hand 30–90 (nur mit passendem Skat)",
+                "Grand: mit Skataufnahme 48–120 (reicht)",
+                "Null: mit Skataufnahme 23 (reicht nie) · Hand Ouvert 59 (reicht)",
+            ]
+        );
+        let en = I18n::new(Language::En);
+        let off = super::lesson(&en, &view, &lesson(false));
+        let on = super::lesson(&en, &view, &lesson(true));
+        assert_eq!(on.len(), off.len() + 1, "one Kontra/Re line");
+        let on = texts(&on);
+        assert!(on.contains(
+            &"Kontra and Re double the points written down, not the game value: they do not change whether the bid is reached."
+        ));
+        assert!(
+            on.iter()
+                .any(|t| t.starts_with("The rating of your move above is a coarse model estimate"))
+        );
+        assert!(on.iter().any(|t| {
+            t.starts_with("Note: reaching the bid only rules out losing by overbidding.")
+        }));
+        // No line names an action, and the question has no figures.
+        for a in [Action::Pass, Action::Bid(48), Action::Hold] {
+            let name = action_at(&en, 48, None, a);
+            assert!(!on.iter().any(|t| t.contains(&name)), "{name}");
+        }
+        let question = texts(&lesson_question(&en, &lesson(true))).join(" ");
+        assert!(!question.chars().any(|c| c.is_ascii_digit()), "{question}");
     }
 }

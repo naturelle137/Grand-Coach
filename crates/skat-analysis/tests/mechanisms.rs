@@ -15,9 +15,9 @@ mod common;
 
 use common::*;
 use skat_analysis::lesson::{
-    Check, Comparison, Condition, EvidenceClass, GameKind, LessonKind, PARTNER_OVERTAKE,
-    PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Support, TRUMPF_VULNERABILITY, Unmet,
-    catalogue, compare, gather,
+    Check, Comparison, Condition, EvidenceClass, GAME_VALUE, GameKind, HAND_STRUCTURE, LessonKind,
+    PARTNER_OVERTAKE, PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Support,
+    TRUMPF_VULNERABILITY, Unmet, catalogue, compare, gather,
 };
 use skat_analysis::mechanism::{
     Abstich, Certainty, Mechanism, MechanismKind, Overtake, mechanisms,
@@ -687,7 +687,9 @@ fn the_catalogue_puts_the_two_mechanisms_first() {
             TRUMPF_VULNERABILITY,
             PARTNER_OVERTAKE,
             PROVEN_VOID,
-            REMAINING_TRUMPF
+            REMAINING_TRUMPF,
+            GAME_VALUE,
+            HAND_STRUCTURE
         ]
     );
     for (key, roles, kind) in [

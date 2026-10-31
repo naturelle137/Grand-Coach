@@ -24,18 +24,22 @@
 //! lesson with [`teach`] and falls back to the model comparison when none
 //! applies. [`lesson_content`] hands the cited facts of a taught lesson,
 //! or the exact mechanisms of the chosen card, to the frontend as plain
-//! data.
+//! data. Before card play these are the own hand structure and the legal
+//! game values ([`LessonContent::HandStructure`],
+//! [`LessonContent::GameValue`]), never a preferred bid, game or discard.
 
 use skat_analysis::lesson::{catalogue, compare as compare_options, gather};
 use skat_analysis::{Budget, Cancel, analyze, utility};
+pub use skat_core::Spitzen;
 use skat_core::{Action, Card, Contract, GameType, KontraLevel, Phase, PlayerView, Seat};
 
 pub use skat_analysis::lesson::{
-    Check, Claim, Comparison, Evidence, EvidenceClass, Item, Lesson, LessonId, LessonKind,
-    PARTNER_OVERTAKE, PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Snapshot, Source,
-    TRUMPF_VULNERABILITY,
+    Check, Claim, Comparison, Evidence, EvidenceClass, GAME_VALUE, HAND_STRUCTURE, Item, Lesson,
+    LessonId, LessonKind, PARTNER_OVERTAKE, PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role,
+    Snapshot, Source, TRUMPF_VULNERABILITY,
 };
 pub use skat_analysis::mechanism::{Abstich, Certainty, Mechanism, MechanismKind, Overtake};
+pub use skat_analysis::preplay::{ContractValue, GameValues, Range, Reach, SkatState, Structure};
 
 pub use skat_analysis::sampling::Place;
 pub use skat_analysis::{
@@ -393,6 +397,30 @@ pub enum LessonContent {
         /// The mechanism.
         overtake: Overtake,
     },
+    /// [`HAND_STRUCTURE`]: own Buben, Trumpf and Spitzen per Farbspiel and
+    /// Grand, in the order Kreuz, Pik, Herz, Karo, Grand. Names no game as
+    /// better.
+    HandStructure {
+        /// One entry per candidate game.
+        games: Vec<Structure>,
+    },
+    /// [`GAME_VALUE`]: the value the game must reach and every contract
+    /// still possible with its value range, in the order Kreuz, Pik, Herz,
+    /// Karo, Grand, Null. Reaching the value only avoids Überreizen; it
+    /// says nothing about winning and names no contract as better.
+    GameValue {
+        /// The value the game must reach.
+        value: u16,
+        /// During bidding: `value` is what a Bid or Hold commits to, not
+        /// the bid reached.
+        bidding: bool,
+        /// Kontra/Re is configured; it does not change the game value.
+        kontra_re: bool,
+        /// What the seat knows about the Skat.
+        skat: SkatState,
+        /// Per game type, its contracts measured against `value`.
+        games: Vec<(GameType, Vec<ContractValue>)>,
+    },
 }
 
 /// A void proven by not following suit, with its evidence.
@@ -423,8 +451,42 @@ pub fn lesson_content(
     let Teaching::Lesson { id, items } = teaching else {
         return None;
     };
-    let game = evidence.snapshot.game?;
     let cited = || items.iter().filter_map(|&i| evidence.items.get(i));
+    match id.key.as_ref() {
+        HAND_STRUCTURE => {
+            let games: Vec<Structure> = cited()
+                .filter_map(|item| match item.claim {
+                    Claim::Fact(Observation::Structure(s)) => Some(s),
+                    _ => None,
+                })
+                .collect();
+            return (!games.is_empty()).then_some(LessonContent::HandStructure { games });
+        }
+        GAME_VALUE => {
+            let (value, kontra_re) = cited().find_map(|item| match item.claim {
+                Claim::Fact(Observation::Commitment { value, kontra_re }) => {
+                    Some((value, kontra_re))
+                }
+                _ => None,
+            })?;
+            let values: Vec<GameValues> = cited()
+                .filter_map(|item| match item.claim {
+                    Claim::Fact(Observation::GameValues(v)) => Some(v),
+                    _ => None,
+                })
+                .collect();
+            let skat = values.first()?.skat;
+            return Some(LessonContent::GameValue {
+                value,
+                bidding: evidence.snapshot.phase == Phase::Reizen,
+                kontra_re,
+                skat,
+                games: values.iter().map(|v| (v.game, v.against(value))).collect(),
+            });
+        }
+        _ => {}
+    }
+    let game = evidence.snapshot.game?;
     let mechanisms = || {
         comparison
             .filter(|c| c.reliability == Reliability::Reliable)
@@ -1005,6 +1067,10 @@ fn considerations(
                     || decision == Decision::Kontra
                     || view.legal_actions.contains(&Action::Kontra)
             }
+            // Shown by the hand-structure and game-value lessons only.
+            Observation::Structure(_)
+            | Observation::GameValues(_)
+            | Observation::Commitment { .. } => false,
         })
         .copied()
         .map(Consideration::Known)

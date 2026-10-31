@@ -281,6 +281,9 @@ coach-fact-skat-known = The Skat holds: { $cards }.
 coach-fact-bid-shown = { $player } bid up to { $value }.
 coach-fact-kontra-eligible = { $player } may still say Kontra.
 coach-fact-trumpf-unseen = You have not seen { $count } trumps yet.
+coach-fact-structure = { $game }: you hold { $count } trumps.
+coach-fact-game-values = { $game }: possible game values { $value }.
+coach-fact-commitment = The game must be worth at least { $value }.
 coach-section-lesson = What to look at
 coach-section-lesson-review = What is certain
 coach-lesson-class-trumpf = trumps
@@ -346,6 +349,56 @@ coach-lesson-partner-overtake-rule = { $case ->
     }
 coach-lesson-partner-overtake-exception = Note: being able to beat it does not mean your partner will. This says nothing about later tricks or about which card you should have played.
 coach-lesson-partner-overtake-transfer = When the declarer leads and your partner sits behind you: with which cards can your partner still beat the declarer's card?
+coach-lesson-spitzen = { $case ->
+        [mit] with { $count }
+       *[ohne] without { $count }
+    }
+coach-lesson-preplay-model = The rating of your move above is a coarse model estimate: before card play the model simulates only a few deals, and in them everyone plays as if they saw all cards.
+coach-lesson-hand-structure-question = For each suit and for Grand: which Jacks and how many trumps do you hold – and with or without how many?
+coach-lesson-hand-structure-game = { $game }: { $kind ->
+        [grand] { $count } Jacks
+       *[suit] { $count } trumps
+    } ({ $cards }), { $value }.
+coach-lesson-hand-structure-discarded = Of these, in the Skat you discarded: { $count } ({ $cards }). They count for the matadors but cannot be played.
+coach-lesson-hand-structure-range = { $case ->
+        [fixed] The unknown Skat cannot change this count.
+       *[range] With the unknown Skat: { $min } to { $max } matadors possible (with or without), up to { $count } { $kind ->
+            [grand] Jacks
+           *[suit] trumps
+        }.
+    }
+coach-lesson-hand-structure-skat = { $skat ->
+        [unknown] The Skat is unknown. Its two cards count for the declarer's matadors (also in a Hand game), so the count can still change.
+        [held] You hold twelve cards. The matadors count all twelve, including the two you put away; only the ten you keep are played.
+       *[discarded] The two cards you put away still count for the matadors but are not played.
+    }
+coach-lesson-hand-structure-exception = Note: these counts describe your cards. They do not say whether a game is won, which game to play, how high to bid or what to put away.
+coach-lesson-hand-structure-transfer = With your next hand: for each suit and for Grand, which Jacks and how many trumps do you hold – and with or without how many?
+coach-lesson-game-value-question = What is each of your possible games worth with your cards – and what can the unknown Skat still change?
+coach-lesson-game-value-bid = { $case ->
+        [call] Bidding or holding here commits you to at least { $value }.
+       *[declarer] The bid is { $value }.
+    } A game worth less than that is lost as overbid (ISkO), however many points you take.
+coach-lesson-game-value-game = { $game }: { $value }
+coach-lesson-game-value-entry = { $kind ->
+        [plain] with pickup
+        [hand] Hand
+        [ouvert] Ouvert
+       *[handouvert] Hand Ouvert
+    } { $value } ({ $case ->
+        [reached] reaches it
+        [skat] only with a suitable Skat
+        [play] only with Schneider or Schwarz made in play
+       *[never] cannot reach it
+    })
+coach-lesson-game-value-skat = { $skat ->
+        [unknown] The Skat is unknown: its cards count for the matadors, so a range goes from the lowest to the highest value any Skat can give.
+       *[known] You know the Skat: the matadors and so these values are fixed.
+    }
+coach-lesson-game-value-levels = Values without Schneider or Schwarz in play. Each made in play adds one level; announced (Hand only) each adds two. Ouvert in a suit game or Grand needs Hand with Schneider and Schwarz announced; Null has fixed values.
+coach-lesson-game-value-kontra = Kontra and Re double the points written down, not the game value: they do not change whether the bid is reached.
+coach-lesson-game-value-exception = Note: reaching the bid only rules out losing by overbidding. It says nothing about whether you win, and no game or bid is named here as better.
+coach-lesson-game-value-transfer = At the next bid value: which of your games still reach it for sure, and which only with a suitable Skat?
 coach-holder-skat = The Skat
 coach-class-trumps = trumps
 coach-class-jacks = Jacks

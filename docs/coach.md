@@ -31,8 +31,9 @@ first lesson of the catalogue whose `Lesson::check` applies, otherwise
 `Teaching::Fallback`: only the model comparison, no strategic reason.
 `Hints` carry the evidence and at most a fact lesson, since mechanisms
 need the move; `MoveReview` carries evidence, comparison and teaching.
-The catalogue holds the two mechanisms and the two exact lessons below,
-in that order; elsewhere the teaching is the fallback.
+The catalogue holds the two mechanisms, the two exact card-play lessons
+and the two pre-play lessons below, in that order; elsewhere the teaching
+is the fallback.
 
 ## Exact lessons (D-55)
 
@@ -127,6 +128,49 @@ estimated. Null and Schwarz objectives come from the contract.
 `skat-analysis` gained `inferences` for M5: the opponent model's
 distribution of trumps over the hidden places, from the same weighted
 distributions as the estimates.
+
+## Pre-play lessons (D-57)
+
+Two fact lessons (`LessonKind::Fact`, version 1, supported) before card
+play, for the bidder and the declarer. They cite only exact items and
+hold with an incomplete or cancelled analysis. `skat_analysis::preplay`
+computes them from the view and the rules (ISkO: Spitzen count the
+declarer's cards with the Skat, also in Hand games; game value = base
+value × levels; a game worth less than the bid is lost as überreizt).
+
+| Key | Decisions | Evidence shown after the move |
+|-----|-----------|-------------------------------|
+| `hand-structure` | the seat's first bidding call; Drücken | per Farbspiel and Grand: own Trumpf (Grand: Buben) with the cards, Spitzen mit/ohne, and with an unknown Skat the possible Spitzen range and most Trumpf; Trumpf in the own discarded Skat |
+| `game-value` | later bidding calls; Hand or pickup; the announcement | the value to reach (bid, or lowest value of an own Bid or Hold); per game type each contract still possible (with pickup, Hand, Null Ouvert, Hand Ouvert) with its value range and whether it reaches the value, only with a suitable Skat, only with Schneider or Schwarz made in play, or never; Kontra/Re, if configured, changes no game value |
+
+Unknown versus known Skat: while bidding, at Hand or pickup and in a Hand
+game the Skat is unknown and every pair of unseen cards may lie in it, so
+Spitzen and values are ranges. After pickup the twelve cards fix the
+Spitzen (the discard counts too); the text says that only ten are played.
+After Drücken the own Skat is known.
+
+Before the move the hints show only the question; it names no option and
+contains no figures. After the move the content does not depend on the
+chosen action: every candidate game is listed in a fixed order (Kreuz,
+Pik, Herz, Karo, Grand, Null). Each note adds that the rating of the move
+above is a coarse model estimate before card play.
+
+What they do not claim:
+
+- That a game wins, which game or bid is better, or a safe or profitable
+  bid limit; reaching the value only rules out Überreizen.
+- Anything about the opponents' cards or the bidding evidence.
+- Which cards to put away.
+
+Limitations: values leave out Schneider and Schwarz made in play (named
+as such) and announced Schneider or Schwarz without Ouvert; suit and Grand
+Ouvert appear only with both announced, as the rules require. The
+pre-play estimates and the continuation bias stay as in
+[analysis.md](analysis.md); this package does not improve them. The
+fixtures are in `skat-analysis/tests/preplay.rs` (hand-derived positions
+and an independent enumeration over every possible Skat of random deals)
+and `skat-coach/tests/preplay.rs`; learner UAT is pending
+([coach-validation.md](coach-validation.md)).
 
 ## Policies (D-48)
 

@@ -36,6 +36,7 @@ use crate::double_dummy::{DdValue, Position, Solver, Stakes};
 use crate::evidence;
 use crate::knowledge::{Knowledge, TrumpfSets};
 use crate::policy;
+use crate::preplay::{self, GameValues, Structure};
 use crate::sampling::{Diagnostic, HiddenCards, Place, World};
 
 /// Result of analysing one decision of one seat.
@@ -160,6 +161,22 @@ pub enum Observation {
     KontraEligible {
         /// The seat.
         seat: Seat,
+    },
+    /// The own Buben, Trumpf and Spitzen of one candidate Farbspiel or
+    /// Grand (bidder or declarer before card play; [`crate::preplay`]).
+    Structure(Structure),
+    /// The game values one game type can have with the own cards (bidder or
+    /// declarer before card play; [`crate::preplay`]).
+    GameValues(GameValues),
+    /// The game must be worth at least `value`, or it is lost as überreizt
+    /// (ISkO 5.4): the bid reached, or during bidding the lowest value an
+    /// own Bid or Hold commits to ([`crate::preplay::commitment`]).
+    Commitment {
+        /// The value.
+        value: u16,
+        /// Kontra/Re is configured (D-03): it multiplies the list points,
+        /// not the game value.
+        kontra_re: bool,
     },
 }
 
@@ -1037,6 +1054,22 @@ fn observations(view: &PlayerView) -> Vec<Observation> {
                 value: signal.shown,
             });
         }
+    }
+    out.extend(
+        preplay::structures(view)
+            .into_iter()
+            .map(Observation::Structure),
+    );
+    out.extend(
+        preplay::game_values(view)
+            .into_iter()
+            .map(Observation::GameValues),
+    );
+    if let Some(value) = preplay::commitment(view) {
+        out.push(Observation::Commitment {
+            value,
+            kontra_re: view.config.kontra_re,
+        });
     }
     if view.config.kontra_re && view.kontra == KontraLevel::None && view.phase == Phase::Spiel {
         for seat in Seat::ALL {
