@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: EUPL-1.2
 
 //! The live coach through the application interface: intervention levels,
-//! requests, the important-decision policy, the pre-move warning, stale,
-//! cancelled and incomplete results, settings changes, and that the coach
-//! never changes the game or the opponents.
+//! staged requests, the important-decision policy, the pre-move warning,
+//! the note after the move and the debriefing, stale, cancelled and
+//! incomplete results, settings changes, and that the coach never changes
+//! the game or the opponents.
 
-use skat_app::coach_model::{Judgement, Status};
+use skat_app::coach_model::{Judgement, MomentKind, Note, Stage, Status, hints};
 use skat_app::{
     Action, Advice, AppError, AppEvent, Budget, Cancel, CoachEvent, CoachLevel, CoachSettings,
-    Command, Level, Opponents, Pending, Phase, SeriesLength, Session, SessionConfig, TableView,
-    Unavailable,
+    Command, Debriefing, Level, Opponents, Pending, Phase, SeriesLength, Session, SessionConfig,
+    TableView, Unavailable,
 };
 
 /// Cheap but complete for card play late in a game.
@@ -103,10 +104,14 @@ fn levels_and_requests() {
     assert_eq!(coach.advice, Advice::None);
     assert_eq!(s.execute(Command::RequestAdvice), Err(AppError::CoachOff));
 
-    // On request: only after asking.
+    // On request: shown only after asking, though analysed anyway for
+    // the note after the move.
     set(&mut s, CoachLevel::OnRequest, false);
-    assert!(s.coach_job().is_none());
-    assert!(s.view().coach.help_available);
+    assert!(s.coach_job().is_some_and(|j| !j.is_review()));
+    let coach = s.view().coach;
+    assert!(coach.help_available && !coach.analysing);
+    assert_eq!(coach.advice, Advice::None);
+    assert_eq!(coach.next_stage, Some(Stage::Considerations));
     s.execute(Command::RequestAdvice).unwrap();
     assert_eq!(s.view().coach.advice, Advice::Computing);
     assert!(s.view().coach.analysing);
@@ -120,8 +125,8 @@ fn levels_and_requests() {
     let action = simple_action(&s.view());
     s.execute(Command::Act(action)).unwrap();
     if to_human(&mut s) {
-        assert!(s.coach_job().is_none());
         assert_eq!(s.view().coach.advice, Advice::None);
+        assert_eq!(s.view().coach.next_stage, Some(Stage::Considerations));
     }
 
     // Every move: on its own, at every decision.
@@ -170,7 +175,9 @@ fn important_level_shows_exactly_the_important_decisions() {
             match s.view().coach.advice {
                 Advice::Ready(e) => {
                     assert!(important);
-                    assert_eq!(*e, explanation);
+                    // The situation shows on its own, the figures only on
+                    // request, and never the ranking.
+                    assert_eq!(*e, hints(&explanation, Stage::Situation));
                     shown += 1;
                 }
                 Advice::None => {
@@ -385,16 +392,16 @@ fn stale_cancelled_and_incomplete_results() {
     set(&mut s, CoachLevel::EveryMove, false);
     assert!(to_human(&mut s));
 
-    // Stale: the decision changed before the result arrived.
+    // Played before the result arrived: it still backs the note.
     let job = s.coach_job().unwrap();
     let action = simple_action(&s.view());
     s.execute(Command::Act(action)).unwrap();
     let after = game_part(&s.view());
-    assert_eq!(
-        s.finish_coach(job.run(None)),
-        Err(AppError::StaleCoachResult)
-    );
+    let result = job.run(None);
+    assert_eq!(s.finish_coach(result.clone()), Ok(Vec::new()));
     assert_eq!(game_part(&s.view()), after);
+    // A second time it belongs to no decision any more.
+    assert_eq!(s.finish_coach(result), Err(AppError::StaleCoachResult));
 
     // Stale: computed with another budget.
     assert!(to_human(&mut s));
@@ -528,4 +535,138 @@ fn coach_output_is_reproducible() {
     set(&mut c, CoachLevel::EveryMove, false);
     assert!(to_human(&mut c));
     assert_ne!(c.coach_job().unwrap().seed(), x.seed());
+}
+
+#[test]
+fn requests_reveal_one_stage_at_a_time() {
+    let mut s = session(9, false);
+    s.set_coach_budget(TINY);
+    assert!(to_human(&mut s));
+    run_coach(&mut s);
+    let stage = |s: &Session| match s.view().coach.advice {
+        Advice::Ready(h) | Advice::Provisional(h) => Some(h.stage),
+        _ => None,
+    };
+    assert_eq!(stage(&s), None);
+    for expected in [Stage::Considerations, Stage::Situation, Stage::Figures] {
+        assert_eq!(s.view().coach.next_stage, Some(expected));
+        s.execute(Command::RequestAdvice).unwrap();
+        assert_eq!(stage(&s), Some(expected));
+    }
+    assert_eq!(s.view().coach.next_stage, None);
+    s.execute(Command::RequestAdvice).unwrap();
+    assert_eq!(stage(&s), Some(Stage::Figures), "nothing more to reveal");
+    match s.view().coach.advice {
+        Advice::Ready(h) | Advice::Provisional(h) => {
+            let figures = h.figures.expect("figures stage");
+            let options = h.situation.expect("situation stage").options;
+            assert!(figures.iter().map(|f| f.action).eq(options.iter().copied()));
+            assert_eq!(options, s.view().legal_actions, "neutral order");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // Without figures the situation is the last stage.
+    let mut settings = s.coach_settings();
+    settings.show_figures = false;
+    s.execute(Command::SetCoach(settings)).unwrap();
+    assert_eq!(stage(&s), Some(Stage::Situation));
+    assert_eq!(s.view().coach.next_stage, None);
+
+    // Every move shows the considerations on its own.
+    set(&mut s, CoachLevel::EveryMove, false);
+    let action = simple_action(&s.view());
+    s.execute(Command::Act(action)).unwrap();
+    if to_human(&mut s) {
+        run_coach(&mut s);
+        assert_eq!(stage(&s), Some(Stage::Considerations));
+        assert_eq!(s.view().coach.next_stage, Some(Stage::Situation));
+    }
+}
+
+#[test]
+fn every_own_move_gets_a_note_even_if_analysed_afterwards() {
+    let mut s = session(10, false);
+    s.set_coach_budget(TINY);
+    assert!(to_human(&mut s));
+    assert_eq!(s.view().coach.last_move, None);
+
+    // Analysed before the move: the note is there at once.
+    run_coach(&mut s);
+    let action = simple_action(&s.view());
+    s.execute(Command::Act(action)).unwrap();
+    let last = s.view().coach.last_move.expect("a note");
+    assert_eq!(last.action, action);
+    assert!(last.note.is_some());
+
+    // Played before the analysis: computed afterwards, the current
+    // decision first.
+    assert!(to_human(&mut s));
+    let action = simple_action(&s.view());
+    s.execute(Command::Act(action)).unwrap();
+    let last = s.view().coach.last_move.expect("a note");
+    assert_eq!((last.action, last.note), (action, None));
+    if to_human(&mut s) {
+        let job = s.coach_job().unwrap();
+        assert!(!job.is_review(), "the current decision goes first");
+        s.finish_coach(job.run(None)).unwrap();
+    }
+    let job = s.coach_job().expect("the review is queued");
+    assert!(job.is_review());
+    // A cancelled review stays queued.
+    let cancel = Cancel::new();
+    cancel.cancel();
+    s.finish_coach(job.run(Some(&cancel))).unwrap();
+    let job = s.coach_job().expect("still queued");
+    assert!(job.is_review());
+    s.finish_coach(job.run(None)).unwrap();
+    let last = s.view().coach.last_move.unwrap();
+    assert_eq!(last.action, action);
+    // TINY: the early decisions are not judged reliably.
+    assert!(last.note.is_some());
+
+    // Off: no notes.
+    set(&mut s, CoachLevel::Off, false);
+    assert_eq!(s.view().coach.last_move, None);
+}
+
+#[test]
+fn debriefing_names_the_bad_moment_after_the_game() {
+    let (mut s, weak, _) = weak_position();
+    set(&mut s, CoachLevel::EveryMove, true);
+    s.execute(Command::Act(weak)).unwrap();
+    s.execute(Command::ProceedAnyway).unwrap();
+    let last = s.view().coach.last_move.expect("a note");
+    assert_eq!((last.action, last.note), (weak, Some(Note::ClearlyWeaker)));
+    assert_eq!(s.view().coach.debriefing, None, "only after the game");
+    loop {
+        s.run_opponents();
+        if s.view().legal_actions.is_empty() {
+            break;
+        }
+        run_coach(&mut s);
+        let action = simple_action(&s.view());
+        let events = s.execute(Command::Act(action)).unwrap();
+        if events.iter().any(|e| matches!(e, AppEvent::Coach(_))) {
+            s.execute(Command::ProceedAnyway).unwrap();
+        }
+    }
+    while s.coach_job().is_some() {
+        run_coach(&mut s);
+    }
+    match s.view().coach.debriefing {
+        Some(Debriefing::Ready(moments)) => {
+            assert!(moments.iter().any(|m| m.kind == MomentKind::Bad
+                && m.review.chosen.action == weak
+                && m.review.chosen.judgement == Judgement::Weak
+                && m.review.best.is_some()));
+        }
+        other => panic!("{other:?}"),
+    }
+    // The next game starts afresh.
+    if !s.view().series_finished {
+        s.execute(Command::NextGame).unwrap();
+        let coach = s.view().coach;
+        assert_eq!((coach.last_move, coach.debriefing), (None, None));
+    }
 }

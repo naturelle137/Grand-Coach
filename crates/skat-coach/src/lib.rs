@@ -11,6 +11,11 @@
 //! documented thresholds below (`docs/coach.md`, D-48). It returns no
 //! texts; frontends translate the structure.
 //!
+//! No telling ahead (D-49): before the move a frontend shows only
+//! [`Hints`], revealed stage by stage and never naming the best option;
+//! after the move [`review`] judges the chosen action, and at the end of
+//! the game [`moments`] picks the particularly good and bad decisions.
+//!
 //! Information boundary: [`explain`] takes the deciding seat's
 //! [`PlayerView`] and the analysis of exactly that view (D-23).
 
@@ -38,6 +43,17 @@ pub const MARGIN_SE: f64 = 2.0;
 /// Win chances or throw-in probabilities that differ by less than this are
 /// not mentioned as a reason.
 pub const CHANCE_STEP: f64 = 0.05;
+
+/// A worse choice is a bad moment of the debriefing only if it is
+/// expected to cost at least this many Seeger-Fabian points; smaller
+/// losses get the note after the move only.
+pub const MOMENT_POINTS: f64 = 5.0;
+
+/// At most this many bad moments in the end-of-game debriefing.
+pub const BAD_MOMENTS: usize = 3;
+
+/// At most this many good moments in the end-of-game debriefing.
+pub const GOOD_MOMENTS: usize = 2;
 
 /// The kind of decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -204,6 +220,8 @@ pub enum Reason {
 pub struct ComparedOption {
     /// The action.
     pub action: Action,
+    /// Whether a player would ordinarily weigh it ([`natural`]).
+    pub natural: bool,
     /// Its standing.
     pub judgement: Judgement,
     /// The analysis estimate, unchanged.
@@ -267,6 +285,15 @@ pub struct Explanation {
     /// Status of the analysis. Only [`Status::Complete`] backs a
     /// recommendation, an important-decision mark or a warning.
     pub status: Status,
+    /// The legal actions in the order of the view: the neutral order in
+    /// which [`Hints`] list them, independent of their values.
+    pub actions: Vec<Action>,
+    /// The bid value reached when deciding (to name "hold" later).
+    pub bid: u16,
+    /// Hand game, once decided (to name announcements later).
+    pub hand_game: Option<bool>,
+    /// The trick being played, from 1, during card play.
+    pub trick: Option<u8>,
     /// Facts and inferences worth thinking about, facts first.
     pub considerations: Vec<Consideration>,
     /// Every legal option, best first.
@@ -282,14 +309,309 @@ pub struct Explanation {
     pub assumptions: Vec<Assumption>,
 }
 
-/// Why the coach warns before an action.
+/// Why the coach warns before an action. It names no alternative (D-49):
+/// the better option is shown only after the game.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Warning {
-    /// The chosen, weak option.
+    /// The chosen, weak option; `gap` is the expected loss.
     pub chosen: ComparedOption,
-    /// The best option.
-    pub best: ComparedOption,
+}
+
+/// How much of the analysis the coach reveals before the move (D-49), one
+/// stage per request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Stage {
+    /// Objective, sure facts and likely inferences.
+    Considerations,
+    /// Plus the options in neutral order and a qualitative hint.
+    Situation,
+    /// Plus every option's figures, still in neutral order.
+    Figures,
+}
+
+impl Stage {
+    /// The stage revealed after this one.
+    pub fn next(self) -> Option<Stage> {
+        match self {
+            Stage::Considerations => Some(Stage::Situation),
+            Stage::Situation => Some(Stage::Figures),
+            Stage::Figures => None,
+        }
+    }
+}
+
+/// Qualitative reading of a decision that names no option.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Situation {
+    /// Only one legal option.
+    Forced,
+    /// One option is better than all others beyond the noise margin.
+    OneStandsOut,
+    /// This many options (two or more) are about equally good, the best
+    /// among them.
+    SeveralEqual {
+        /// Number of options about as good as the best, the best included.
+        count: u8,
+    },
+    /// No reliable reading (analysis incomplete or nothing evaluated).
+    Unclear,
+}
+
+/// Stage [`Stage::Situation`]: the options and a hint, no judgement.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SituationHint {
+    /// The qualitative reading.
+    pub situation: Situation,
+    /// Important decision: a natural option costs clearly (D-48).
+    pub important: bool,
+    /// The legal options in neutral order.
+    pub options: Vec<Action>,
+}
+
+/// Stage [`Stage::Figures`]: one option's estimate, without judgement.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct OptionFigures {
+    /// The option.
+    pub action: Action,
+    /// The analysis estimate, if any distribution finished for it.
+    pub estimate: Option<Estimate>,
+}
+
+/// What the coach shows before the move: the revealed stages only. It
+/// never ranks or labels the options (D-49).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Hints {
+    /// The revealed stage.
+    pub stage: Stage,
+    /// The kind of decision.
+    pub decision: Decision,
+    /// The seat's role.
+    pub role: Role,
+    /// What the declarer has to achieve.
+    pub objective: Objective,
+    /// Status of the analysis.
+    pub status: Status,
+    /// Facts and inferences worth thinking about, facts first.
+    pub considerations: Vec<Consideration>,
+    /// From [`Stage::Situation`] on.
+    pub situation: Option<SituationHint>,
+    /// From [`Stage::Figures`] on, in the order of `situation.options`.
+    pub figures: Option<Vec<OptionFigures>>,
+    /// What the estimates rest on.
+    pub basis: Basis,
+    /// Model assumptions behind the estimates.
+    pub assumptions: Vec<Assumption>,
+}
+
+/// The coach's hints for `e` up to `stage`.
+pub fn hints(e: &Explanation, stage: Stage) -> Hints {
+    let situation = (stage >= Stage::Situation).then(|| SituationHint {
+        situation: match e.verdict {
+            Verdict::Forced => Situation::Forced,
+            _ if !e.complete() => Situation::Unclear,
+            Verdict::Clear => Situation::OneStandsOut,
+            Verdict::Close { equivalent } => Situation::SeveralEqual {
+                count: equivalent.saturating_add(1),
+            },
+            Verdict::Unknown => Situation::Unclear,
+        },
+        important: e.important,
+        options: e.actions.clone(),
+    });
+    let figures = (stage >= Stage::Figures).then(|| {
+        e.actions
+            .iter()
+            .map(|&action| OptionFigures {
+                action,
+                estimate: e.option(action).and_then(|o| o.estimate),
+            })
+            .collect()
+    });
+    Hints {
+        stage,
+        decision: e.decision,
+        role: e.role,
+        objective: e.objective,
+        status: e.status,
+        considerations: e.considerations.clone(),
+        situation,
+        figures,
+        basis: e.basis,
+        assumptions: e.assumptions.clone(),
+    }
+}
+
+/// The short note on an own move right after it (D-49).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Note {
+    /// The best option was chosen.
+    Good,
+    /// An option about as good as the best.
+    AboutEqual,
+    /// Somewhat weaker than the best ([`Judgement::Worse`]).
+    SomewhatWeaker,
+    /// Clearly weaker than the best ([`Judgement::Weak`]).
+    ClearlyWeaker,
+    /// There was no choice.
+    Forced,
+    /// No reliable judgement (analysis incomplete, option not compared).
+    Uncertain,
+}
+
+/// One own decision judged after the move.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct MoveReview {
+    /// The kind of decision.
+    pub decision: Decision,
+    /// The seat's role.
+    pub role: Role,
+    /// Status of the analysis.
+    pub status: Status,
+    /// The bid value reached when deciding.
+    pub bid: u16,
+    /// Hand game, once decided.
+    pub hand_game: Option<bool>,
+    /// The trick, from 1, during card play.
+    pub trick: Option<u8>,
+    /// Whether the decision was important (D-48).
+    pub important: bool,
+    /// Whether there was only one legal option.
+    pub forced: bool,
+    /// What the seat knew and could infer then.
+    pub considerations: Vec<Consideration>,
+    /// The chosen option.
+    pub chosen: ComparedOption,
+    /// The best option, if one was evaluated.
+    pub best: Option<ComparedOption>,
+    /// The costliest natural weak option, which a good decision avoided.
+    pub trap: Option<ComparedOption>,
+}
+
+impl MoveReview {
+    /// The short note on the move.
+    pub fn note(&self) -> Note {
+        if self.forced {
+            return Note::Forced;
+        }
+        if self.status != Status::Complete {
+            return Note::Uncertain;
+        }
+        match self.chosen.judgement {
+            Judgement::Best => Note::Good,
+            Judgement::Equivalent => Note::AboutEqual,
+            Judgement::Worse => Note::SomewhatWeaker,
+            Judgement::Weak => Note::ClearlyWeaker,
+            Judgement::Screened | Judgement::NotEvaluated => Note::Uncertain,
+        }
+    }
+}
+
+/// Judges `chosen` in the decision `e` explains. `None` if `chosen` is not
+/// one of its options.
+pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
+    let chosen = e.option(chosen)?.clone();
+    let trap = e
+        .options
+        .iter()
+        .filter(|o| o.natural && o.judgement == Judgement::Weak)
+        .max_by(|a, b| a.gap.total_cmp(&b.gap))
+        .cloned();
+    Some(MoveReview {
+        decision: e.decision,
+        role: e.role,
+        status: e.status,
+        bid: e.bid,
+        hand_game: e.hand_game,
+        trick: e.trick,
+        important: e.important,
+        forced: e.verdict == Verdict::Forced,
+        considerations: e.considerations.clone(),
+        chosen,
+        best: e.best().cloned(),
+        trap,
+    })
+}
+
+/// Whether a moment of the debriefing was particularly good or bad.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum MomentKind {
+    /// An important decision decided well: a costly natural option avoided.
+    Good,
+    /// A clearly or somewhat weaker option chosen.
+    Bad,
+}
+
+/// One moment of the end-of-game debriefing.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Moment {
+    /// Good or bad.
+    pub kind: MomentKind,
+    /// The decision.
+    pub review: MoveReview,
+}
+
+/// The particularly good and bad moments of a game's own decisions, in
+/// game order (D-49): the [`BAD_MOMENTS`] costliest weaker choices (losing
+/// at least [`MOMENT_POINTS`]) and the
+/// [`GOOD_MOMENTS`] important decisions that avoided the costliest trap.
+/// Only complete analyses count.
+pub fn moments(reviews: &[MoveReview]) -> Vec<Moment> {
+    let complete = |r: &&MoveReview| r.status == Status::Complete && !r.forced;
+    let mut bad: Vec<(usize, &MoveReview)> = reviews
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| complete(r))
+        .filter(|(_, r)| {
+            matches!(r.chosen.judgement, Judgement::Worse | Judgement::Weak)
+                && r.chosen.gap >= MOMENT_POINTS
+        })
+        .collect();
+    bad.sort_by(|a, b| {
+        b.1.chosen
+            .gap
+            .total_cmp(&a.1.chosen.gap)
+            .then(a.0.cmp(&b.0))
+    });
+    bad.truncate(BAD_MOMENTS);
+    let avoided = |r: &MoveReview| r.trap.as_ref().map_or(0.0, |t| t.gap);
+    let mut good: Vec<(usize, &MoveReview)> = reviews
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| complete(r))
+        .filter(|(_, r)| {
+            r.important
+                && r.trap.is_some()
+                && matches!(r.chosen.judgement, Judgement::Best | Judgement::Equivalent)
+        })
+        .collect();
+    good.sort_by(|a, b| avoided(b.1).total_cmp(&avoided(a.1)).then(a.0.cmp(&b.0)));
+    good.truncate(GOOD_MOMENTS);
+    let mut out: Vec<(usize, Moment)> = bad
+        .into_iter()
+        .map(|(i, r)| (i, MomentKind::Bad, r))
+        .chain(good.into_iter().map(|(i, r)| (i, MomentKind::Good, r)))
+        .map(|(i, kind, r)| {
+            (
+                i,
+                Moment {
+                    kind,
+                    review: r.clone(),
+                },
+            )
+        })
+        .collect();
+    out.sort_by_key(|(i, _)| *i);
+    out.into_iter().map(|(_, m)| m).collect()
 }
 
 impl Explanation {
@@ -320,10 +642,6 @@ impl Explanation {
         let chosen = self.option(action)?;
         (chosen.judgement == Judgement::Weak).then(|| Warning {
             chosen: chosen.clone(),
-            best: self
-                .best()
-                .expect("a weak option implies a best one")
-                .clone(),
         })
     }
 }
@@ -372,6 +690,10 @@ pub fn explain(view: &PlayerView, analysis: &Analysis) -> Option<Explanation> {
         role,
         objective: view.contract.map_or(Objective::Undecided, objective),
         status: analysis.status,
+        actions: view.legal_actions.clone(),
+        bid: view.bid,
+        hand_game: view.hand_game,
+        trick: (view.phase == Phase::Spiel).then(|| view.tricks.len() as u8 + 1),
         considerations: considerations(view, analysis, decision, role),
         options,
         verdict,
@@ -519,6 +841,7 @@ fn compare(view: &PlayerView, analysis: &Analysis, role: Role) -> Vec<ComparedOp
             let Some(estimate) = option.estimate else {
                 return ComparedOption {
                     action: option.action,
+                    natural: natural(view, option.action),
                     judgement: Judgement::NotEvaluated,
                     estimate: None,
                     value: None,
@@ -554,6 +877,7 @@ fn compare(view: &PlayerView, analysis: &Analysis, role: Role) -> Vec<ComparedOp
             };
             ComparedOption {
                 action: option.action,
+                natural: natural(view, option.action),
                 judgement,
                 estimate: Some(estimate),
                 value: Some(value),

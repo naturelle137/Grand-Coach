@@ -339,7 +339,8 @@ impl Session {
             self.finished,
             self.opponent_to_move(),
             &self.game.view(human_seat),
-            self.coach.view(self.human_decision()),
+            self.coach
+                .view(self.human_decision(), self.game.current_seat().is_none()),
         )
     }
 
@@ -364,17 +365,29 @@ impl Session {
         })
     }
 
-    /// The coach analysis due now, if the coach needs one for the human's
-    /// current decision and has none yet. Compute it with
-    /// [`CoachJob::run`] (on any thread) and pass the result to
-    /// [`Session::finish_coach`]. It holds only the human's view.
+    /// The coach analysis due now: for the human's current decision if the
+    /// coach needs one and has none yet, otherwise for the oldest own
+    /// decision played before its analysis finished (note and debriefing,
+    /// [`CoachJob::is_review`]). Compute it with [`CoachJob::run`] (on any
+    /// thread) and pass the result to [`Session::finish_coach`]. It holds
+    /// only the human's view.
     pub fn coach_job(&self) -> Option<CoachJob> {
-        let key = self.human_decision()?;
-        if !self.coach.wanted(key) || self.coach.result(key).is_some() {
-            return None;
+        if let Some(key) = self.human_decision()
+            && self.coach.wanted(key)
+            && self.coach.result(key).is_none()
+        {
+            let seat = PlayerId::HUMAN.seat(self.dealer);
+            return Some(self.coach.job(key, self.game.view(seat)));
         }
-        let seat = PlayerId::HUMAN.seat(self.dealer);
-        Some(self.coach.job(key, self.game.view(seat)))
+        self.coach.review_job()
+    }
+
+    /// The finished coach analysis of the human's current decision, with
+    /// the full ranking. For tools and tests only: frontends show the
+    /// [`crate::CoachView`], which never names the best option before the
+    /// move (D-49).
+    pub fn coach_result(&self) -> Option<&CoachResult> {
+        self.coach.result(self.human_decision()?)
     }
 
     /// Stores a coach result for the decision it was computed for. If the
@@ -382,6 +395,9 @@ impl Session {
     /// played (not weak, or no finished analysis to judge it) or held with
     /// a warning. Fails without changes if the decision changed meanwhile.
     pub fn finish_coach(&mut self, result: CoachResult) -> Result<Vec<AppEvent>, AppError> {
+        if self.coach.accept_review(&result) {
+            return Ok(Vec::new());
+        }
         let key = self.human_decision().ok_or(AppError::StaleCoachResult)?;
         if !self.coach.accept(key, result) {
             return Err(AppError::StaleCoachResult);
@@ -396,7 +412,7 @@ impl Session {
     /// until the analysis is finished, or holds it with a warning.
     fn check(&mut self, key: DecisionKey, action: Action) -> Result<Vec<AppEvent>, AppError> {
         if !self.coach.settings.warnings {
-            return self.apply(action);
+            return self.play_own(key, action);
         }
         // Reject illegal actions before holding them back.
         self.game.validate(action).map_err(AppError::Rule)?;
@@ -412,8 +428,17 @@ impl Session {
                 });
                 Ok(vec![AppEvent::Coach(CoachEvent::Warned { action })])
             }
-            None => self.apply(action),
+            None => self.play_own(key, action),
         }
+    }
+
+    /// Plays the human's own action at `key`; the coach keeps it for the
+    /// note after the move and the debriefing (D-49).
+    fn play_own(&mut self, key: DecisionKey, action: Action) -> Result<Vec<AppEvent>, AppError> {
+        self.game.validate(action).map_err(AppError::Rule)?;
+        let view = self.game.view(PlayerId::HUMAN.seat(self.dealer));
+        self.coach.record(key, &view, action);
+        self.apply(action)
     }
 
     /// `true` if an opponent has to act.
@@ -531,16 +556,19 @@ impl Session {
                 if self.coach.result(key).is_some_and(|r| r.is_unavailable()) {
                     self.coach.cache = None;
                 }
-                self.coach.requested = Some(key);
+                // One more stage each time (D-49); nothing more once all
+                // are shown.
+                if let Some(stage) = self.coach.next_stage(key) {
+                    self.coach.requested = Some((key, stage));
+                }
                 Ok(Vec::new())
             }
             Command::ProceedAnyway => {
+                let key = self.human_decision().ok_or(AppError::NothingPending)?;
                 let pending = self.coach.pending.take().ok_or(AppError::NothingPending)?;
                 let action = pending.action();
-                if let Some(key) = self.human_decision() {
-                    self.coach.acknowledged.push((key, action));
-                }
-                self.apply(action)
+                self.coach.acknowledged.push((key, action));
+                self.play_own(key, action)
                     .inspect_err(|_| self.coach.pending = Some(pending))
             }
             Command::Reconsider => {
@@ -637,7 +665,7 @@ impl Session {
         self.game_seed = self.rng.next_u64();
         self.ai_seeds = [self.ai_rng.next_u64(), self.ai_rng.next_u64()];
         self.actions = 0;
-        self.coach.decision_changed();
+        self.coach.game_changed();
         self.game = Game::new(self.game_seed, rule_config(self.config));
         vec![AppEvent::GameStarted {
             number: self.number,

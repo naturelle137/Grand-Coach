@@ -11,8 +11,9 @@
 use skat_analysis::sampling::Place;
 use skat_analysis::{Analysis, Budget, Cancel, CardClass, Observation, Status, analyze, utility};
 use skat_coach::{
-    Amount, Consideration, Decision, Explanation, Judgement, Objective, Reason, Role, Verdict,
-    WEAK_POINTS, decision_seed, explain,
+    Amount, BAD_MOMENTS, Consideration, Decision, Explanation, GOOD_MOMENTS, Judgement,
+    MOMENT_POINTS, MomentKind, Note, Objective, Reason, Role, Situation, Stage, Verdict,
+    WEAK_POINTS, decision_seed, explain, hints, moments, review,
 };
 use skat_core::{
     Action, Announcement, Card, CardSet, Deal, Follow, Game, GameType, PlayerView, Rank,
@@ -219,8 +220,63 @@ fn assert_traceable(view: &PlayerView, a: &Analysis, e: &Explanation) {
     for &action in &view.legal_actions {
         if let Some(w) = e.warning(action) {
             assert_eq!(w.chosen.judgement, Judgement::Weak);
-            assert_eq!(w.best.judgement, Judgement::Best);
         }
+    }
+    assert_no_telling(view, e);
+}
+
+/// The hints before the move reveal one stage at a time and never rank or
+/// judge the options (D-49); the review after the move judges exactly the
+/// chosen option.
+fn assert_no_telling(view: &PlayerView, e: &Explanation) {
+    let first = hints(e, Stage::Considerations);
+    assert_eq!(first.considerations, e.considerations);
+    assert!(first.situation.is_none() && first.figures.is_none());
+    let second = hints(e, Stage::Situation);
+    let situation = second.situation.expect("stage 2 has the situation");
+    assert!(second.figures.is_none());
+    assert_eq!(situation.options, view.legal_actions, "neutral order");
+    assert_eq!(situation.important, e.important);
+    match situation.situation {
+        Situation::Forced => assert_eq!(e.verdict, Verdict::Forced),
+        Situation::Unclear => {
+            assert!(e.status != Status::Complete || e.verdict == Verdict::Unknown)
+        }
+        Situation::OneStandsOut => assert_eq!(e.verdict, Verdict::Clear),
+        Situation::SeveralEqual { count } => {
+            assert_eq!(
+                e.verdict,
+                Verdict::Close {
+                    equivalent: count - 1
+                }
+            )
+        }
+    }
+    let figures = hints(e, Stage::Figures)
+        .figures
+        .expect("stage 3 has figures");
+    assert!(
+        figures
+            .iter()
+            .map(|f| f.action)
+            .eq(view.legal_actions.iter().copied())
+    );
+    for f in &figures {
+        assert_eq!(f.estimate, e.option(f.action).unwrap().estimate);
+    }
+    for &action in &view.legal_actions {
+        let r = review(e, action).expect("every legal action can be reviewed");
+        assert_eq!(r.chosen.action, action);
+        let expected = match r.chosen.judgement {
+            _ if e.verdict == Verdict::Forced => Note::Forced,
+            _ if e.status != Status::Complete => Note::Uncertain,
+            Judgement::Best => Note::Good,
+            Judgement::Equivalent => Note::AboutEqual,
+            Judgement::Worse => Note::SomewhatWeaker,
+            Judgement::Weak => Note::ClearlyWeaker,
+            Judgement::Screened | Judgement::NotEvaluated => Note::Uncertain,
+        };
+        assert_eq!(r.note(), expected);
     }
 }
 
@@ -366,8 +422,41 @@ fn overbid_announcement_is_weak_and_important() {
         other: 1.0
     }));
     let warning = e.warning(karo).expect("weak plain announcement warns");
-    assert_eq!(warning.best.estimate.unwrap().win_chance, 1.0);
+    assert_eq!(warning.chosen.action, karo);
+    assert!(warning.chosen.gap >= WEAK_POINTS);
     assert!(e.important, "a natural option is weak");
+
+    // The debriefing: choosing the overbid game is a bad moment, avoiding
+    // it a good one; the caps hold however many moments there are.
+    let bad = review(&e, karo).unwrap();
+    assert_eq!(bad.note(), Note::ClearlyWeaker);
+    let best = e.best().unwrap().action;
+    let good = review(&e, best).unwrap();
+    assert_eq!(good.note(), Note::Good);
+    assert!(
+        good.trap
+            .as_ref()
+            .is_some_and(|t| t.natural && t.gap >= WEAK_POINTS)
+    );
+    let found = moments(&[good.clone(), bad.clone()]);
+    assert_eq!(
+        found.iter().map(|m| m.kind).collect::<Vec<_>>(),
+        [MomentKind::Good, MomentKind::Bad],
+        "game order"
+    );
+    let many: Vec<_> = (0..5).flat_map(|_| [good.clone(), bad.clone()]).collect();
+    let found = moments(&many);
+    let count = |k| found.iter().filter(|m| m.kind == k).count();
+    assert_eq!(count(MomentKind::Bad), BAD_MOMENTS);
+    assert_eq!(count(MomentKind::Good), GOOD_MOMENTS);
+    // A small loss gets the note only, no moment.
+    let mut small = bad.clone();
+    small.chosen.judgement = Judgement::Worse;
+    small.chosen.gap = MOMENT_POINTS - 0.5;
+    assert_eq!(small.note(), Note::SomewhatWeaker);
+    assert!(moments(&[small.clone()]).is_empty());
+    small.chosen.gap = MOMENT_POINTS;
+    assert_eq!(moments(&[small]).len(), 1);
 }
 
 #[test]

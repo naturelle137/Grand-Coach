@@ -19,7 +19,7 @@ use egui_kittest::kittest::Queryable;
 use gui_egui::GrandCoachApp;
 use skat_app::coach_model::Judgement;
 use skat_app::{
-    Action, Advice, Budget, Card, CoachLevel, CoachSettings, Level, Opponents, Pending,
+    Action, Advice, Budget, Card, CoachLevel, CoachSettings, Debriefing, Level, Opponents, Pending,
     SeriesLength, SessionConfig, TableView,
 };
 
@@ -37,7 +37,11 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("new-series", new_series),
     ("new-series-seed", new_series_seed),
     ("coach", coach),
+    ("coach-situation", coach_situation),
+    ("coach-figures", coach_figures),
     ("coach-no-figures", coach_no_figures),
+    ("coach-note", coach_note),
+    ("coach-debriefing", coach_debriefing),
     ("coach-warning", coach_warning),
 ];
 
@@ -111,7 +115,7 @@ fn new_series_seed(harness: &mut Harness<'_, GrandCoachApp>) {
 }
 
 /// The coach panel after "Was soll ich bedenken?" in the second trick:
-/// facts, estimates, compared options with figures.
+/// objective, facts and estimates, no options yet (D-49).
 fn coach(harness: &mut Harness<'_, GrandCoachApp>) {
     play_until(harness, |view, _| {
         view.tricks_played >= 1 && view.legal_actions.len() >= 2
@@ -122,15 +126,53 @@ fn coach(harness: &mut Harness<'_, GrandCoachApp>) {
     });
 }
 
-/// The same explanation with the figures hidden.
-fn coach_no_figures(harness: &mut Harness<'_, GrandCoachApp>) {
+/// The second stage: the options unjudged and a qualitative hint.
+fn coach_situation(harness: &mut Harness<'_, GrandCoachApp>) {
     coach(harness);
+    click(harness, Role::Button, "Wie ist die Lage?");
+}
+
+/// The third stage: every option's figures, unjudged, in neutral order.
+fn coach_figures(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_situation(harness);
+    click(harness, Role::Button, "Zahlen zeigen");
+}
+
+/// The third stage with the figures hidden: back to the second.
+fn coach_no_figures(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_figures(harness);
     let settings = view(harness).coach.settings;
     harness.state_mut().set_coach(CoachSettings {
         show_figures: false,
         ..settings
     });
     harness.run_steps(4);
+}
+
+/// The note on the human's last card while the opponents play on.
+fn coach_note(harness: &mut Harness<'_, GrandCoachApp>) {
+    play_until(harness, |view, played| {
+        played && view.tricks_played >= 1 && view.acting != Some(skat_app::PlayerId::HUMAN)
+    });
+    await_coach(harness, |view| {
+        view.coach
+            .last_move
+            .as_ref()
+            .is_some_and(|m| m.note.is_some())
+    });
+}
+
+/// The debriefing after the first game, coach at every move.
+fn coach_debriefing(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        warnings: false,
+        show_figures: true,
+    });
+    play_until(harness, |view, _| view.acting.is_none());
+    await_coach(harness, |view| {
+        matches!(view.coach.debriefing, Some(Debriefing::Ready(_)))
+    });
 }
 
 /// The warning before a clearly weaker card (coach at every move).
@@ -149,14 +191,18 @@ fn coach_warning(harness: &mut Harness<'_, GrandCoachApp>) {
         if v.series_finished {
             break;
         }
-        let weak = match &v.coach.advice {
-            Advice::Ready(e) => e
-                .options
-                .iter()
-                .find(|o| o.judgement == Judgement::Weak)
-                .map(|o| o.action),
-            _ => None,
-        };
+        let weak = harness
+            .state()
+            .session()
+            .coach_result()
+            .and_then(|r| r.explanation())
+            .filter(|e| e.complete())
+            .and_then(|e| {
+                e.options
+                    .iter()
+                    .find(|o| o.judgement == Judgement::Weak)
+                    .map(|o| o.action)
+            });
         if let Some(Action::Play(card)) = weak {
             click(harness, Role::Button, &card_label(card));
             await_coach(harness, |view| {

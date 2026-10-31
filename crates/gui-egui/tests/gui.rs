@@ -930,15 +930,27 @@ fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
     let before = game_part(&view(&harness));
     // On request (default): the help button, no explanation yet.
     harness.get_by_label("Frag den Coach, wenn du Hilfe möchtest.");
+    // One stage per click, never naming the best option (D-49).
     button(&mut harness, "Was soll ich bedenken?");
     await_coach(&mut harness);
     assert!(matches!(
         view(&harness).coach.advice,
         Advice::Ready(_) | Advice::Provisional(_)
     ));
-    harness.get_by_label("Optionen im Vergleich");
     harness.get_by_label("Worauf die Schätzung beruht");
+    assert!(
+        harness
+            .query_by_label("Mögliche Züge (ohne Wertung)")
+            .is_none()
+    );
+    button(&mut harness, "Wie ist die Lage?");
+    harness.get_by_label("Die Lage");
+    harness.get_by_label("Mögliche Züge (ohne Wertung)");
+    assert!(harness.query_all_by_label_contains("Gewinnchance").count() == 0);
+    button(&mut harness, "Zahlen zeigen");
+    harness.get_by_label("Zahlen je Option (ohne Wertung – vergleiche selbst)");
     assert!(harness.query_all_by_label_contains("Gewinnchance").count() > 0);
+    assert!(harness.query_all_by_label_contains("am besten").count() == 0);
 
     // Hiding the figures keeps the reasoning.
     let settings = view(&harness).coach.settings;
@@ -947,7 +959,7 @@ fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
         ..settings
     });
     harness.run_steps(3);
-    harness.get_by_label("Optionen im Vergleich");
+    harness.get_by_label("Mögliche Züge (ohne Wertung)");
     assert!(harness.query_all_by_label_contains("Gewinnchance").count() == 0);
     assert!(harness.query_all_by_label_contains("%").count() == 0);
 
@@ -959,7 +971,7 @@ fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
         ..settings
     });
     harness.run_steps(3);
-    harness.get_by_label("Options compared");
+    harness.get_by_label("Figures per option (not judged – compare them yourself)");
     assert!(
         harness
             .query_all_by_label_contains("Winning chance")
@@ -981,6 +993,39 @@ fn coach_explains_on_request_in_both_languages_with_or_without_figures() {
     assert_eq!(game_part(&view(&harness)), before);
     human_turn(&mut harness, &mut rng);
     assert_ne!(game_part(&view(&harness)), before);
+
+    // Back on: after the next own move the coach notes how it was.
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::OnRequest,
+        ..settings
+    });
+    loop {
+        settle(&mut harness);
+        if view(&harness).acting == Some(PlayerId::HUMAN) {
+            break;
+        }
+        human_turn(&mut harness, &mut rng);
+    }
+    human_turn(&mut harness, &mut rng);
+    await_coach(&mut harness);
+    for _ in 0..20_000 {
+        harness.run_steps(1);
+        if view(&harness)
+            .coach
+            .last_move
+            .is_some_and(|m| m.note.is_some())
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    harness.run_steps(3);
+    assert!(
+        harness
+            .query_all_by_label_contains("Dein letzter Zug")
+            .count()
+            > 0
+    );
 }
 
 #[test]
@@ -1051,17 +1096,20 @@ fn warning_before_a_weak_card_by_clicks() {
                 }
                 None => {}
             }
-            // The coach's finished analysis of this decision.
-            let weak = match &v.coach.advice {
-                Advice::Ready(e) if v.phase == Phase::Spiel => Some(e),
-                _ => None,
-            }
-            .and_then(|e| {
-                e.options
-                    .iter()
-                    .find(|o| o.judgement == Judgement::Weak)
-                    .map(|o| o.action)
-            });
+            // The coach's finished analysis of this decision (the panel
+            // never names it before the move).
+            let weak = harness
+                .state()
+                .session()
+                .coach_result()
+                .and_then(|r| r.explanation())
+                .filter(|e| v.phase == Phase::Spiel && e.complete())
+                .and_then(|e| {
+                    e.options
+                        .iter()
+                        .find(|o| o.judgement == Judgement::Weak)
+                        .map(|o| o.action)
+                });
             let Some(Action::Play(card)) = weak else {
                 human_turn(&mut harness, &mut rng);
                 continue;

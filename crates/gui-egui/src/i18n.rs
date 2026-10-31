@@ -207,6 +207,11 @@ mod tests {
                     "finished",
                     "best",
                     "action",
+                    "note",
+                    "decision",
+                    "trick",
+                    "judgement",
+                    "trap",
                 ] {
                     args.set(name, "x");
                 }
