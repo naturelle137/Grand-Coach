@@ -79,9 +79,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          # A PAT is only needed once PRs should trigger other workflows (CI);
-          # PRs created with GITHUB_TOKEN do not trigger them.
-          token: ${{ secrets.AUTOMATION_PAT || secrets.GITHUB_TOKEN }}
 
       # Always installed, so an issue that creates the Cargo workspace can
       # build and test it, too.
@@ -169,9 +166,11 @@ jobs:
         # Runs even when the agent failed, so partial work is not lost.
         if: ${{ !cancelled() }}
         env:
-          GH_TOKEN: ${{ secrets.AUTOMATION_PAT || secrets.GITHUB_TOKEN }}
-          HAS_PAT: ${{ secrets.AUTOMATION_PAT != '' }}
-          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The maintainer's token opens the PR, so the PR is theirs and
+          # triggers CI; PRs created with GITHUB_TOKEN trigger no workflows.
+          PR_TOKEN: ${{ secrets.PR_CREATION_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_PR_TOKEN: ${{ secrets.PR_CREATION_TOKEN != '' }}
           AGENT_OUTCOME: ${{ steps.claude.outcome }}
         run: |
           set -euo pipefail
@@ -297,14 +296,14 @@ jobs:
               "$AGENT_OUTCOME" >> "$BODY_FILE"
           fi
 
-          PR_URL=$(gh pr create --base main --head "$BRANCH" "${DRAFT[@]}" \
+          PR_URL=$(GH_TOKEN="$PR_TOKEN" gh pr create --base main --head "$BRANCH" "${DRAFT[@]}" \
             --title "$TITLE" --body-file "$BODY_FILE")
 
-          # Without a PAT the PR triggers no `pull_request` run, so start the
-          # required CI explicitly (workflow_dispatch is allowed for
-          # GITHUB_TOKEN); its checks attach to the branch head.
-          if [ "$HAS_PAT" != "true" ]; then
-            GH_TOKEN="$BOT_TOKEN" gh workflow run ci.yml --ref "$BRANCH"
+          # Without PR_CREATION_TOKEN the PR triggers no `pull_request` run,
+          # so start the required CI explicitly (workflow_dispatch is allowed
+          # for GITHUB_TOKEN); its checks attach to the branch head.
+          if [ "$HAS_PR_TOKEN" != "true" ]; then
+            gh workflow run ci.yml --ref "$BRANCH"
           fi
 
           # Tick the checklist items the agent judged done. Merged onto the
