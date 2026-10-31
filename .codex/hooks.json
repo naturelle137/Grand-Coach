@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/var/home/critter/lokal/dev/grand-coach/.codex/hooks/guard-git.sh'"
+            "command": "\"$(git rev-parse --show-toplevel)\"/.codex/hooks/guard-git.sh"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "git -C \"$CLAUDE_PROJECT_DIR\" config core.hooksPath .githooks"
+            "command": "git -C \"$(git rev-parse --show-toplevel)\" config core.hooksPath .githooks"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/var/home/critter/lokal/dev/grand-coach/.codex/hooks/ci-stop-gate.sh'",
+            "command": "\"$(git rev-parse --show-toplevel)\"/.codex/hooks/ci-stop-gate.sh",
             "timeout": 1800
           }
         ]
