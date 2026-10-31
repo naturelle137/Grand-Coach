@@ -10,10 +10,10 @@
 //! comparison, figures, facts and assumptions are its details (D-52).
 
 use skat_app::coach_model::{
-    Abstich, Amount, Assumption, Basis, CardClass, Certainty, ComparedOption, Consideration,
-    ContractValue, Decision, Estimate, Follow, Hints, Judgement, LessonContent, Moment, MomentKind,
-    MoveReview, Note, Objective, Observation, Overtake, Place, Range, Reach, Reason, Role,
-    Situation, SkatState, Spitzen, Stage, Structure, TrumpfSets, Warning,
+    Abstich, Amount, Assumption, Basis, CardClass, Certainty, ComparedOption, Concept,
+    Consideration, ContractValue, Decision, Estimate, Follow, Hints, Judgement, LessonContent,
+    Moment, MomentKind, MoveReview, Note, Objective, Observation, Overtake, Place, Range, Reach,
+    Reason, Role, Situation, SkatState, Spitzen, Stage, Structure, TrumpfSets, Warning,
 };
 use skat_app::{
     Action, CardSet, Contract, Debriefing, GameType, LastMove, PlayerId, Seat, TableView,
@@ -102,6 +102,23 @@ fn action_at(i18n: &I18n, bid: u16, hand_game: Option<bool>, action: Action) -> 
         Action::Re => i18n.t("button-re"),
         Action::KeinRe => i18n.t("button-kein-re"),
     }
+}
+
+/// The name of a teaching concept (the learning focus).
+pub fn concept(i18n: &I18n, concept: Concept) -> String {
+    i18n.t(match concept {
+        Concept::HandStructure => "coach-concept-hand-structure",
+        Concept::GameValue => "coach-concept-game-value",
+        Concept::ProvenVoid => "coach-concept-proven-void",
+        Concept::RemainingTrumpf => "coach-concept-remaining-trumpf",
+        Concept::TrumpfVulnerability => "coach-concept-trumpf-vulnerability",
+        Concept::PartnerOvertake => "coach-concept-partner-overtake",
+    })
+}
+
+/// The learning focus, or that none is chosen.
+pub fn focus(i18n: &I18n, focus: Option<Concept>) -> String {
+    focus.map_or_else(|| i18n.t("coach-focus-none"), |c| concept(i18n, c))
 }
 
 fn decision(i18n: &I18n, decision: Decision) -> String {
@@ -982,6 +999,10 @@ pub fn hints(i18n: &I18n, view: &TableView, h: &Hints, figures: bool) -> Vec<Lin
         if s.important && complete {
             out.push(line(i18n.t("coach-important"), Style::Strong));
         }
+        if h.compare_question {
+            // The same question for every option and ranking (D-49).
+            out.push(line(i18n.t("coach-question-compare"), Style::Strong));
+        }
         match (&h.figures, figures) {
             (Some(all), true) => {
                 out.push(line(i18n.t("coach-section-figures"), Style::Heading));
@@ -1095,7 +1116,10 @@ fn comparison(
 fn chosen(i18n: &I18n, r: &MoveReview, name: &dyn Fn(Action) -> String) -> String {
     let action = name(r.chosen.action);
     let best = r.best.as_ref().map(|b| name(b.action));
+    let complete = r.status == skat_app::coach_model::Status::Complete;
     let id = match (r.chosen.judgement, &best) {
+        // Estimates of an unfinished analysis back no judgement.
+        _ if !complete => "coach-moment-chosen-provisional",
         (Judgement::Best, _) => "coach-moment-chosen-best",
         (Judgement::Equivalent, Some(_)) => "coach-moment-chosen-equivalent",
         (Judgement::Worse, Some(_)) => "coach-moment-chosen-worse",
@@ -1111,20 +1135,27 @@ fn chosen(i18n: &I18n, r: &MoveReview, name: &dyn Fn(Action) -> String) -> Strin
     )
 }
 
-/// One moment of the debriefing: a short summary and its analysis details.
+/// One moment of the debriefing: a short summary, its lesson's evidence
+/// and its analysis details.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MomentText {
-    /// What was decided and how the model rates it; never an estimate.
+    /// What was decided, how the model rates it and the lesson's checking
+    /// question; never an estimate.
     pub summary: Vec<Line>,
+    /// Heading of the lesson's evidence (the lesson's section title).
+    pub lesson_title: String,
+    /// The lesson's evidence and exceptions; collapsed by default.
+    pub lesson: Vec<Line>,
     /// Comparison by metric, figures (if shown), what was known and the
     /// model assumptions; collapsed by default.
     pub details: Vec<Line>,
 }
 
 /// One moment of the debriefing. The summary names the decision, the
-/// choice and the model's judgement and says honestly that no strategic
-/// explanation exists yet: the score differences of the reasons are no
-/// cause and stay in the details (D-52).
+/// choice and the model's judgement, then the moment's lesson (question
+/// context, evidence, exception, transfer question), and says honestly
+/// that the lesson does not explain the model's rating: score differences
+/// are no cause and stay in the details (D-52).
 fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentText {
     let r = &m.review;
     let name = |a: Action| action_at(i18n, r.bid, r.hand_game, a);
@@ -1134,6 +1165,9 @@ fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentTex
             "{} · {what}",
             i18n.tf("coach-moment-trick", &[("trick", trick.into())])
         );
+    }
+    if m.focused {
+        what = format!("{what} · {}", i18n.t("coach-moment-focus"));
     }
     let mut summary = vec![
         line(what, Style::Heading),
@@ -1146,11 +1180,23 @@ fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentTex
             Style::Normal,
         ));
     }
-    summary.push(line(i18n.t("coach-moment-no-reason"), Style::Normal));
+    // The lesson: its checking questions in the summary, its evidence and
+    // exceptions one click away.
+    let mut taught = lesson(i18n, view, &m.lesson).into_iter();
+    let lesson_title = taught.next().map(|l| l.text).unwrap_or_default();
+    let (questions, evidence): (Vec<Line>, Vec<Line>) =
+        taught.partition(|l| l.style == Style::Strong);
+    summary.extend(questions);
+    summary.push(line(i18n.t("coach-moment-no-reason"), Style::Weak));
+    // One level below the moment: sections as emphasised lines.
+    let below = |l: Line| match l.style {
+        Style::Heading => line(l.text, Style::Strong),
+        _ => l,
+    };
 
     let mut details = Vec::new();
     let compared = match m.kind {
-        MomentKind::Bad => Some(&r.chosen),
+        MomentKind::Bad | MomentKind::Neutral => Some(&r.chosen),
         MomentKind::Good => trap,
     };
     if let Some(o) = compared {
@@ -1189,11 +1235,6 @@ fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentTex
             Style::Weak,
         ));
     }
-    // One level below the moment: sections as emphasised lines.
-    let below = |l: Line| match l.style {
-        Style::Heading => line(l.text, Style::Strong),
-        _ => l,
-    };
     details.extend(
         considerations(i18n, view, &r.considerations, figures)
             .into_iter()
@@ -1204,7 +1245,12 @@ fn moment(i18n: &I18n, view: &TableView, m: &Moment, figures: bool) -> MomentTex
             .into_iter()
             .map(below),
     );
-    MomentText { summary, details }
+    MomentText {
+        summary,
+        lesson_title,
+        lesson: evidence,
+        details,
+    }
 }
 
 /// The end-of-game debriefing (D-49): heading and status lines, then at
@@ -1294,6 +1340,7 @@ mod tests {
             level: CoachLevel::EveryMove,
             warnings: false,
             show_figures: true,
+            focus: None,
         }))
         .unwrap();
         while !s.view().series_finished {
@@ -1342,7 +1389,7 @@ mod tests {
             .iter()
             .filter_map(|&a| model::review(e, a))
             .collect();
-        let moments = model::moments(&reviews);
+        let moments = model::moments(&reviews, None);
         out.push(flat(&debriefing(
             i18n,
             view,
@@ -1357,6 +1404,8 @@ mod tests {
         let mut out = d.lines.clone();
         for m in &d.moments {
             out.extend(m.summary.iter().cloned());
+            out.push(line(m.lesson_title.clone(), Style::Heading));
+            out.extend(m.lesson.iter().cloned());
             out.extend(m.details.iter().cloned());
         }
         out
@@ -1495,8 +1544,9 @@ mod tests {
         )
     }
 
-    /// The decision with `chosen` played.
+    /// The decision with `chosen` played; it teaches the remaining Trumpf.
     fn fixture(chosen: ComparedOption) -> model::MoveReview {
+        let lesson = fixture_lesson(Concept::RemainingTrumpf);
         let comparison = model::Comparison {
             chosen: chosen.action,
             best: Some(Action::Play(BEST)),
@@ -1555,9 +1605,43 @@ mod tests {
                 items: Vec::new(),
             },
             comparison,
-            teaching: model::Teaching::Fallback,
-            lesson: None,
+            teaching: lesson.teaching.clone(),
+            lesson: Some(lesson.content.clone()),
+            taught: vec![lesson],
         }
+    }
+
+    /// The fixture's lesson: where the Trumpf are after a Trumpf trick.
+    fn fixture_lesson(concept: Concept) -> model::Taught {
+        model::Taught {
+            concept,
+            teaching: model::Teaching::Lesson {
+                id: model::LessonId {
+                    key: concept.key().into(),
+                    version: 1,
+                },
+                items: Vec::new(),
+            },
+            content: LessonContent::RemainingTrumpf {
+                game: GameType::Farbe(Suit::Herz),
+                sets: herz_sets(),
+            },
+        }
+    }
+
+    /// `r` with only the lesson of `concept` (the content stays the
+    /// fixture's; the selection reads the concept).
+    fn teaching(mut r: model::MoveReview, concept: Concept) -> model::MoveReview {
+        r.taught = vec![fixture_lesson(concept)];
+        r
+    }
+
+    /// `r` without any supported lesson.
+    fn fallback(mut r: model::MoveReview) -> model::MoveReview {
+        r.taught.clear();
+        r.teaching = model::Teaching::Fallback;
+        r.lesson = None;
+        r
     }
 
     fn good() -> model::MoveReview {
@@ -1600,7 +1684,7 @@ mod tests {
     }
 
     fn ready(reviews: &[model::MoveReview]) -> Debriefing {
-        Debriefing::Ready(model::moments(reviews))
+        Debriefing::Ready(model::moments(reviews, None))
     }
 
     /// Estimated figures of the fixture, as the frontend formats them.
@@ -1652,7 +1736,8 @@ mod tests {
         let view = table();
         for language in Language::ALL {
             let i18n = I18n::new(language);
-            for reviews in [vec![], vec![uncertain(), forced()]] {
+            // Nothing, no lesson despite a clear loss, a forced move.
+            for reviews in [vec![], vec![fallback(weak()), forced()]] {
                 let d = debriefing(&i18n, &view, &ready(&reviews), true);
                 assert!(d.moments.is_empty());
                 assert_eq!(d.lines.len(), 2);
@@ -1661,38 +1746,75 @@ mod tests {
         }
     }
 
+    /// The lesson lines of the fixture: title, questions, evidence.
+    fn lesson_lines(i18n: &I18n, view: &TableView) -> (String, Vec<Line>, Vec<Line>) {
+        let content = fixture_lesson(Concept::RemainingTrumpf).content;
+        let mut all = lesson(i18n, view, &content).into_iter();
+        let title = all.next().unwrap().text;
+        let (questions, evidence) = all.partition(|l| l.style == Style::Strong);
+        (title, questions, evidence)
+    }
+
     #[test]
-    fn one_weak_moment_reads_as_a_model_judgement_with_an_honest_fallback() {
+    fn one_weak_moment_teaches_its_lesson_and_keeps_the_rating_apart() {
         let view = table();
-        let d = debriefing(&I18n::new(Language::De), &view, &ready(&[weak()]), false);
-        assert_eq!(d.moments.len(), 1);
-        let summary: Vec<&str> = d.moments[0]
-            .summary
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect();
-        assert_eq!(
-            summary,
-            [
+        for (language, head, chosen, apart) in [
+            (
+                Language::De,
                 "Stich 5 · Karte spielen",
                 "Du hast Pik-Sieben gewählt. Das Modell bewertet das deutlich niedriger als Kreuz-Bube.",
-                "Eine strategische Begründung liegt noch nicht vor – nur der Modellvergleich (Analysedetails).",
-            ]
-        );
-        let d = debriefing(&I18n::new(Language::En), &view, &ready(&[weak()]), false);
-        let summary: Vec<&str> = d.moments[0]
-            .summary
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect();
-        assert_eq!(
-            summary,
-            [
+                "Die Lektion begründet nicht die Bewertung des Modells; den Modellvergleich findest du in den Analysedetails.",
+            ),
+            (
+                Language::En,
                 "Trick 5 · Play a card",
                 "You chose Seven of Spades. The model rates it clearly lower than Jack of Clubs.",
-                "No strategic explanation is available yet – only the model's comparison (analysis details).",
-            ]
-        );
+                "The lesson does not explain the model's rating; the model's comparison is in the analysis details.",
+            ),
+        ] {
+            let i18n = I18n::new(language);
+            let d = debriefing(&i18n, &view, &ready(&[weak()]), false);
+            assert_eq!(d.moments.len(), 1);
+            let summary = &d.moments[0].summary;
+            assert_eq!(texts(&summary[..2]), [head, chosen]);
+            let (title, questions, evidence) = lesson_lines(&i18n, &view);
+            assert!(!questions.is_empty() && !evidence.is_empty());
+            // The checking question in the summary, the evidence apart.
+            assert_eq!(summary[2..summary.len() - 1], questions[..]);
+            assert_eq!(summary.last().unwrap().text, apart);
+            assert_eq!(d.moments[0].lesson_title, title);
+            assert_eq!(d.moments[0].lesson, evidence);
+            assert_eq!(title, i18n.t("coach-section-lesson-review"));
+            assert_no_estimates(&joined(summary));
+            assert_no_estimates(&joined(&d.moments[0].lesson));
+        }
+    }
+
+    #[test]
+    fn provisional_and_focused_moments_say_so() {
+        let view = table();
+        for language in Language::ALL {
+            let i18n = I18n::new(language);
+            let reviews = [uncertain()];
+            let focused =
+                Debriefing::Ready(model::moments(&reviews, Some(Concept::RemainingTrumpf)));
+            for (d, focus) in [(ready(&reviews), false), (focused, true)] {
+                let d = debriefing(&i18n, &view, &d, true);
+                assert_eq!(d.moments.len(), 1);
+                let summary = &d.moments[0].summary;
+                // Weak on the finished samples only: no rating at all.
+                let provisional = i18n.tf(
+                    "coach-moment-chosen-provisional",
+                    &[("action", text::card(&i18n, TRAP).into())],
+                );
+                assert_eq!(summary[1].text, provisional);
+                assert_eq!(
+                    summary[0].text.ends_with(&i18n.t("coach-moment-focus")),
+                    focus
+                );
+                assert_no_estimates(&joined(summary));
+            }
+        }
     }
 
     #[test]
@@ -1715,7 +1837,10 @@ mod tests {
                 let trap = i18n.tf("coach-moment-trap", &[("trap", name(TRAP).into())]);
                 let texts: Vec<&str> = m.summary.iter().map(|l| l.text.as_str()).collect();
                 assert_eq!(texts[1..3], [chosen.as_str(), trap.as_str()]);
-                assert_eq!(texts[3], i18n.t("coach-moment-no-reason"));
+                assert_eq!(
+                    texts.last().copied(),
+                    Some(i18n.t("coach-moment-no-reason").as_str())
+                );
             }
         }
     }
@@ -1723,13 +1848,22 @@ mod tests {
     #[test]
     fn many_moments_keep_three_summaries_without_estimates() {
         let view = table();
-        let all = [good(), equivalent(), worse(), weak(), uncertain(), forced()];
+        // One concept each, so none is dropped as a repetition.
+        let all = [
+            teaching(good(), Concept::HandStructure),
+            teaching(equivalent(), Concept::GameValue),
+            teaching(worse(), Concept::ProvenVoid),
+            teaching(weak(), Concept::RemainingTrumpf),
+            teaching(uncertain(), Concept::TrumpfVulnerability),
+            forced(),
+        ];
         for language in Language::ALL {
             let i18n = I18n::new(language);
             for figures in [false, true] {
                 let d = debriefing(&i18n, &view, &ready(&all), figures);
-                // The costliest bad (weak), the best good (good, first of
-                // two equal traps), the next bad (worse); in game order.
+                // Rated clearly first: good, equivalent (both avoid the
+                // 14.3 trap) and weak (14.3) before worse (6.0) and the
+                // provisional one; in game order.
                 assert_eq!(d.moments.len(), 3);
                 let chosen: Vec<String> = d
                     .moments

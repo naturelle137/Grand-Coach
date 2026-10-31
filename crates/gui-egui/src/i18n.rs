@@ -256,6 +256,7 @@ mod tests {
                     "certainty",
                     "trumps",
                     "way",
+                    "focus",
                 ] {
                     args.set(name, "x");
                 }

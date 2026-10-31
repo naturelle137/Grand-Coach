@@ -1065,6 +1065,94 @@ fn coach_levels_are_set_in_the_settings_menu() {
     assert!(!view(&harness).coach.settings.show_figures);
     click(&mut harness, Role::CheckBox, "Zahlen anzeigen");
     assert!(view(&harness).coach.settings.show_figures);
+
+    // The optional learning focus: none by default, one of the lessons by
+    // choice, shown in the coach panel; the game is untouched.
+    let before = game_part(&view(&harness));
+    assert_eq!(view(&harness).coach.settings.focus, None);
+    for (language, label, current) in [
+        (
+            Language::De,
+            "Wo die Trümpfe sind",
+            "Dein Schwerpunkt: Wo die Trümpfe sind",
+        ),
+        (
+            Language::En,
+            "Can the partner take over?",
+            "Your focus: Can the partner take over?",
+        ),
+    ] {
+        harness.state_mut().set_language(language);
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        let settings = match language {
+            Language::De => "Einstellungen",
+            Language::En => "Settings",
+        };
+        button(&mut harness, settings);
+        click(&mut harness, Role::RadioButton, label);
+        assert!(view(&harness).coach.settings.focus.is_some());
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        harness.get_by_label(current);
+        assert_eq!(game_part(&view(&harness)), before);
+    }
+    button(&mut harness, "Settings");
+    click(&mut harness, Role::RadioButton, "No focus");
+    assert_eq!(view(&harness).coach.settings.focus, None);
+    assert_eq!(game_part(&view(&harness)), before);
+}
+
+#[test]
+#[ignore = "slow: CI only (docs/testing.md)"]
+fn every_move_shows_lessons_or_a_compact_status_and_can_be_hidden() {
+    let config = SessionConfig {
+        seed: 12,
+        series: SeriesLength::Fixed(36),
+        kontra_re: true,
+        opponents: Opponents::Levels([Level::Easy; 2]),
+    };
+    let mut harness = harness(config);
+    harness.state_mut().set_coach_budget(COACH_BUDGET);
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        ..CoachSettings::default()
+    });
+    let mut rng = ChaCha8Rng::seed_from_u64(5);
+    let (mut lessons, mut statuses) = (0, 0);
+    for _ in 0..200 {
+        if lessons > 0 && statuses > 0 {
+            break;
+        }
+        settle(&mut harness);
+        if view(&harness).acting != Some(PlayerId::HUMAN) {
+            human_turn(&mut harness, &mut rng);
+            continue;
+        }
+        await_coach(&mut harness);
+        let before = game_part(&view(&harness));
+        match view(&harness).coach.advice {
+            Advice::NoLesson => {
+                statuses += 1;
+                harness.get_by_label(
+                    "Zu dieser Entscheidung hat der Coach keine geprüfte Lektion. Hinweise gibt es auf Nachfrage.",
+                );
+            }
+            Advice::Ready(h) | Advice::Provisional(h) => {
+                assert!(h.teachable());
+                lessons += 1;
+                harness.get_by_label("Worauf achten?");
+            }
+            other => panic!("{other:?}"),
+        }
+        // Hiding is optional and changes nothing but the panel.
+        button(&mut harness, "Ausblenden");
+        assert_eq!(view(&harness).coach.advice, Advice::None);
+        assert!(harness.query_by_label("Ausblenden").is_none());
+        assert_eq!(game_part(&view(&harness)), before);
+        human_turn(&mut harness, &mut rng);
+    }
+    assert!(lessons > 0 && statuses > 0, "{lessons} {statuses}");
 }
 
 #[test]
@@ -1118,7 +1206,7 @@ fn debriefing_details_open_and_close_without_touching_the_game() {
     );
     assert!(
         harness
-            .query_all_by_label_contains("Eine strategische Begründung liegt noch nicht vor")
+            .query_all_by_label_contains("Die Lektion begründet nicht die Bewertung des Modells")
             .count()
             > 0
     );
@@ -1153,13 +1241,19 @@ fn debriefing_details_open_and_close_without_touching_the_game() {
     assert!(harness.query_all_by_label("Analysis details").count() > 0);
     assert!(
         harness
-            .query_all_by_label_contains("No strategic explanation is available yet")
+            .query_all_by_label_contains("The lesson does not explain the model's rating")
             .count()
             > 0
     );
     // In the smallest window (`main`) the details and "next game" stay
-    // reachable.
+    // reachable: the last moment's details by scrolling the panel.
     harness.set_size(egui::Vec2::new(960.0, 640.0));
+    harness.run_steps(4);
+    harness
+        .get_all_by_label("Analysis details")
+        .last()
+        .unwrap()
+        .scroll_to_me();
     harness.run_steps(4);
     harness
         .get_all_by_label("Analysis details")
@@ -1190,6 +1284,7 @@ fn warning_before_a_weak_card_by_clicks() {
             level: CoachLevel::EveryMove,
             warnings: true,
             show_figures: true,
+            focus: None,
         });
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         for _ in 0..200 {
@@ -1264,6 +1359,7 @@ fn window_stays_responsive_while_the_coach_analyses() {
         level: CoachLevel::EveryMove,
         warnings: false,
         show_figures: true,
+        focus: None,
     });
     settle(&mut harness);
     let before = view(&harness);

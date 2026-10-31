@@ -128,6 +128,10 @@ pub enum Command {
     SetCoach(CoachSettings),
     /// Ask the coach about the current decision of the human.
     RequestAdvice,
+    /// Put the coach's advice for the current decision away until the next
+    /// decision or a new request; the game, the settings and the analyses
+    /// are unchanged. Nothing is ever forced on the player.
+    SkipAdvice,
     /// Play the action the warning held back, exactly once.
     ProceedAnyway,
     /// Withdraw the held action and decide again; the game is unchanged.
@@ -561,6 +565,15 @@ impl Session {
                 if let Some(stage) = self.coach.next_stage(key) {
                     self.coach.requested = Some((key, stage));
                 }
+                Ok(Vec::new())
+            }
+            Command::SkipAdvice => {
+                let key = self.human_decision().ok_or(AppError::NoDecision)?;
+                if self.coach.settings.level == crate::CoachLevel::Off {
+                    return Err(AppError::CoachOff);
+                }
+                self.coach.skipped = Some(key);
+                self.coach.requested = None;
                 Ok(Vec::new())
             }
             Command::ProceedAnyway => {

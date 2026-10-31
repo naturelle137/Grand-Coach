@@ -17,7 +17,7 @@ use eframe::egui::{Key, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use gui_egui::{GrandCoachApp, Language};
-use skat_app::coach_model::{Judgement, LessonContent};
+use skat_app::coach_model::{Concept, Judgement, LessonContent};
 use skat_app::{
     Action, Advice, Budget, Card, CoachLevel, CoachSettings, Debriefing, Level, Opponents, Pending,
     Rank, SeriesLength, SessionConfig, TableView,
@@ -72,6 +72,10 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("coach-debriefing-narrow", coach_debriefing_details),
     ("coach-debriefing-en-narrow", coach_debriefing_en),
     ("coach-warning", coach_warning),
+    ("coach-focus", coach_focus),
+    ("coach-no-lesson", coach_no_lesson),
+    ("coach-focus-debriefing", coach_focus_debriefing),
+    ("coach-focus-debriefing-en", coach_focus_debriefing_en),
 ];
 
 /// The window at launch: the "new series" dialog shows the series settings
@@ -466,6 +470,7 @@ fn coach_warning(harness: &mut Harness<'_, GrandCoachApp>) {
         level: CoachLevel::EveryMove,
         warnings: true,
         show_figures: true,
+        focus: None,
     });
     for _ in 0..400 {
         settle(harness);
@@ -512,6 +517,68 @@ fn coach_warning(harness: &mut Harness<'_, GrandCoachApp>) {
         }
     }
     panic!("no weak card found");
+}
+
+/// The settings menu with a learning focus chosen (#46).
+fn coach_focus(harness: &mut Harness<'_, GrandCoachApp>) {
+    settle(harness);
+    click(harness, Role::Button, "Einstellungen");
+    click(harness, Role::RadioButton, "Wo die Trümpfe sind");
+    // Choosing closes the menu; open it again to show the choice.
+    click(harness, Role::Button, "Einstellungen");
+}
+
+/// Coach at every move, a card decision without a supported lesson: the
+/// compact status instead of invented hints, with "Ausblenden" (#46).
+fn coach_no_lesson(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        ..CoachSettings::default()
+    });
+    let card_decision = |view: &TableView| {
+        view.acting == Some(skat_app::PlayerId::HUMAN)
+            && matches!(view.legal_actions.first(), Some(Action::Play(_)))
+    };
+    for _ in 0..40 {
+        play_until(harness, |view, _| card_decision(view));
+        await_coach(harness, |view| {
+            !matches!(view.coach.advice, Advice::Computing)
+        });
+        let v = view(harness);
+        if v.coach.advice == Advice::NoLesson {
+            return;
+        }
+        let card = cards_of(&v).next().expect("a card to play");
+        click(harness, Role::Button, &card_label(card));
+    }
+    panic!("no decision without a lesson");
+}
+
+/// The debriefing after the first game with the focus "Wo die Trümpfe
+/// sind": one moment per concept, the focus marked, each with its lesson.
+fn coach_focus_debriefing(harness: &mut Harness<'_, GrandCoachApp>) {
+    harness.state_mut().set_coach(CoachSettings {
+        level: CoachLevel::EveryMove,
+        focus: Some(Concept::RemainingTrumpf),
+        ..CoachSettings::default()
+    });
+    play_until(harness, |view, _| view.acting.is_none());
+    await_coach(harness, |view| {
+        matches!(view.coach.debriefing, Some(Debriefing::Ready(_)))
+    });
+    // The focused moment's lesson evidence open.
+    let title = "Was sicher feststeht";
+    if let Some(node) = harness.get_all_by_label(title).last() {
+        node.click();
+    }
+    harness.run_steps(4);
+}
+
+/// The same in English.
+fn coach_focus_debriefing_en(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_focus_debriefing(harness);
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(4);
 }
 
 /// Runs frames until the coach state satisfies `done`.
