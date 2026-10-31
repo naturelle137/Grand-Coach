@@ -40,7 +40,8 @@ Teach a repeatable thought process: orient yourself, identify the relevant
 unknown, compare feasible options, act, and check what changed. The aim is
 better independent play at a real table. Counting cards and understanding
 opponents remain the first learning domains. Human expertise is a design
-model to validate with experienced players, not a universal cognitive law.
+model, not a universal cognitive law. No supporting human Skat expert is
+available; this is an explicit validation limitation, not a release blocker.
 
 One optional focus per learning game. A teaching interaction has:
 
@@ -230,12 +231,27 @@ substitution tests, deterministic output, missing-evidence fallback and
 bilingual UI coverage. Legitimately known Skat and Ouvert are separate cases.
 A rule engine test proves legality, not pedagogical effectiveness.
 
-Before claiming learning benefits, experienced Skat players inspect wording
-and exceptions from the permitted view. Learners explain what the message
-means and solve different positions without help. Predefine the protocol,
-record assistance and delayed follow-up, and report small samples honestly.
-Human review remains open until actually performed; agents can prepare
-fixtures and protocols but cannot certify it on the maintainer's behalf.
+No human Skat expert is available. The maintainer participates as a learner
+in user acceptance tests (UAT), assessing clarity, relevant context and
+usable flows, not certifying advanced strategy. Support factual/strategic
+claims with reproducible permitted-view evidence and independently stated
+expected results. Agreement with the same solver, another AI or a learner
+is not independent strategic certification. Narrow or omit unsupported
+claims; correctness and information-boundary gates remain binding.
+
+[#51](https://github.com/naturelle137/grand-coach/issues/51) prepares the M5
+evidence checklist, UAT scripts and initial/delayed evaluation protocol
+after #42 and before #43. Later M5 PRs apply it, with combined learner UAT
+after #47 and before declaring #10 complete. Protocol delivery can close
+Issue #51 without waiting for these later features or human results.
+
+[#54](https://github.com/naturelle137/grand-coach/issues/54) executes the M8
+learner evaluation after #50, including new unaided tasks and a later
+follow-up. Freeze tasks, scoring and assistance rules before collecting
+results; record the real interval and previous exposure. Actual human-run
+items stay pending until performed. Agents must not impersonate the
+learner. A single learner's observations do not establish general learning
+effectiveness or expert strategic validity.
 
 Research supports investigating self-explanation, fading and retrieval;
 it does not validate this product's frequencies, task set or threshold:

@@ -16,21 +16,30 @@ implementation requires a broad architectural change.
 |---------|-----------------|---------|------|---------------------------|
 | A | [#41](https://github.com/naturelle137/grand-coach/issues/41) | Compact debriefing, estimates off by default, honest fallback | S | None |
 | B | [#42](https://github.com/naturelle137/grand-coach/issues/42) | Shared evidence/provenance contract, no new strategy engine | M | None |
-| C | [#43](https://github.com/naturelle137/grand-coach/issues/43) | Two exact lessons: remaining Trumpf and proven voids | M | B |
-| D | [#44](https://github.com/naturelle137/grand-coach/issues/44) | Two narrow card-play mechanisms with conditions/counterexamples | M | B, C |
-| E | [#45](https://github.com/naturelle137/grand-coach/issues/45) | Pre-play structure and legal-value lessons | M | B |
-| F | [#46](https://github.com/naturelle137/grand-coach/issues/46) | One optional focus, staged hints and teaching-based moment selection | M | A, C, D |
-| G | [#47](https://github.com/naturelle137/grand-coach/issues/47) | Historical own hand and current trick in moment cards | M | A, B |
+| C | [#43](https://github.com/naturelle137/grand-coach/issues/43) | Two exact lessons: remaining Trumpf and proven voids | M | B, K |
+| D | [#44](https://github.com/naturelle137/grand-coach/issues/44) | Two narrow card-play mechanisms with conditions/counterexamples | M | B, C, K |
+| E | [#45](https://github.com/naturelle137/grand-coach/issues/45) | Pre-play structure and legal-value lessons | M | B, K |
+| F | [#46](https://github.com/naturelle137/grand-coach/issues/46) | One optional focus, staged hints and teaching-based moment selection | M | A, C, D, K |
+| G | [#47](https://github.com/naturelle137/grand-coach/issues/47) | Historical own hand and current trick in moment cards | M | A, B, K |
 | H | [#48](https://github.com/naturelle137/grand-coach/issues/48) | Optional retrieval questions and explicit assistance levels | M | C, F; M6 quiz APIs |
 | I | [#49](https://github.com/naturelle137/grand-coach/issues/49) | Local assistance-aware descriptive progress | M | B, H; coordinate M8 storage |
 | J | [#50](https://github.com/naturelle137/grand-coach/issues/50) | Twelve legal practice cases and varied unaided transfer | M | D, G, H, I; M7/M8 foundations |
-| K | [#51](https://github.com/naturelle137/grand-coach/issues/51) | Expert/learner validation protocol and empty result templates | S | None to prepare; later features to execute |
+| K | [#51](https://github.com/naturelle137/grand-coach/issues/51) | M5 evidence checklist, learner UAT preparation and protocol | S | B |
+| L | [#54](https://github.com/naturelle137/grand-coach/issues/54) | M8 learner UAT, new unaided tasks and delayed follow-up | M | K, J; M8 foundations |
 
-Start A, B and the protocol part of K independently. Merge B before C/E;
-merge A/B before G. Then D, followed by F. H/I/J follow the existing
-counting, replay and training prerequisites. E can proceed separately from
-the card-play track. API consumers wait until their prerequisite has
-merged; concurrent agents should not invent competing public contracts.
+Agreed sequential order:
+
+**#41 → #42 → #51 → #43 → #44 → #45 → #46 → #47 → M5 acceptance (#10) → #11 → #48 → #12 → #13 foundations → #49 → #50 → #54 → final M8 acceptance.**
+
+Issue #51 prepares the checklist/protocol before lessons exist; each later M5
+PR applies it and supplies applicable learner UAT steps. Record combined
+M5 learner UAT after #47 before declaring #10 complete. #51 does not wait
+for those runs. #54 performs the integrated M8 evaluation after #50.
+
+Issue #13 delivers the storage/training foundations first. Final M8/release
+acceptance is reconciled after #49/#50/#54 and all remaining #13 criteria;
+do not require closing #13 before those follow-ups or create a circular
+dependency. #14 follows completed M8 and is not a prerequisite above.
 
 The inspected local D-49 commit `9eda0d9` supplies staged hints and move
 reviews and was ahead of inspected main `edc0db0`.
@@ -47,8 +56,9 @@ prerequisite is now available. Reinspect its merged APIs before coding.
    readiness needs these tests; educational validation still needs humans.
 3. **Independent practice (H/I/J):** selective retrieval, local observations
    and new tasks without help, after the milestone-owned foundations exist.
-4. **Validation (K protocol, then human execution):** prepare early, review
-   actual lesson versions and exercise independent transfer when available.
+4. **Validation (K in M5, L in M8):** prepare the evidence/UAT protocol
+   after B; execute learner UAT as M5 features arrive and integrated
+   unaided transfer plus delayed follow-up after J.
 
 A package's PR should demonstrate the changed player experience, include
 its independent fixtures, record the actual gate result and update the
@@ -81,6 +91,11 @@ additional outcomes; parent completion still requires its full existing scope.
 - Preserve seeds, budgets, cancellation, stale-result rejection, warnings
   and ordinary play. Repeated help requests do not restart search.
 - Record tests through `scripts/check.sh`; tick only verified work.
-- Distinguish automated verification, expert review and observed learning.
-  K can close after protocol delivery; #39's human-validation item stays
-  open until execution. Agents must not fabricate that evidence.
+- No human Skat expert is available or required for sign-off. The maintainer
+  performs learner UAT for clarity/usability, not expert certification.
+  Factual/strategic claims need independently specified evidence and tests;
+  another AI or the same solver's agreement is not an independent oracle.
+- Distinguish technical correctness, learner comprehension, assistance and
+  new unaided performance. K closes on preparation; L and the applicable
+  human-run items of #39 remain pending until actual execution. No invented
+  participants, expert approval, mastery or general efficacy claims.
