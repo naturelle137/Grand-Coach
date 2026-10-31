@@ -305,13 +305,16 @@ fn assert_no_telling(view: &PlayerView, e: &Explanation) {
         // same whichever action is chosen, and the same as before the move
         // (D-49: the lesson shown before the move implies no action).
         assert_eq!(r.teaching, teach(&catalogue(), &e.evidence, None));
-        assert_eq!(r.lesson, lesson_content(&r.teaching, &r.evidence));
+        assert_eq!(
+            r.lesson,
+            lesson_content(&r.teaching, &r.evidence, Some(&r.comparison))
+        );
     }
     for stage in [Stage::Considerations, Stage::Situation, Stage::Figures] {
         let h = hints(e, stage);
         assert_eq!(h.evidence, e.evidence);
         assert_eq!(h.teaching, teach(&catalogue(), &e.evidence, None));
-        assert_eq!(h.lesson, lesson_content(&h.teaching, &h.evidence));
+        assert_eq!(h.lesson, lesson_content(&h.teaching, &h.evidence, None));
     }
     // The Trumpf sets are shown by their lesson only, not as a fact line.
     assert!(

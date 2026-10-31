@@ -323,6 +323,29 @@ coach-lesson-proven-void-exception = { $case ->
        *[suit] This only rules out { $class }. A player who is void may trump or discard – whether they do and who wins the trick does not follow from it.
     }
 coach-lesson-proven-void-transfer = When { $class } is led again: who can still follow?
+coach-section-lesson-mechanism = What was possible in this trick
+coach-lesson-trumpf-vulnerability-evidence = { $player } plays after your { $card } in this trick. { $certainty ->
+        [certain] It is certain that { $player } holds no { $suit } and at least one trump (this follows from the cards you have seen and the proven voids), so { $player } can trump it.
+       *[possible] { $player } can only trump it while holding no { $suit } and at least one trump. Both are possible, not certain: you have not seen { $count } cards of { $suit } and { $trumps } trumps.
+    }
+coach-lesson-trumpf-vulnerability-rule = Rule (ISkO): a player who can follow suit must. Only a player without { $suit } may trump – or discard instead.
+coach-lesson-trumpf-vulnerability-exception = Note: being able to trump does not mean they will. A possible trump-in alone does not show that drawing trumps first would have been better; the rating of your move above is a separate model judgement.
+coach-lesson-trumpf-vulnerability-transfer = Before you play an Ace or a Ten of a side suit: who plays after you, can they be out of that suit, and can they still hold trumps?
+coach-lesson-partner-overtake-evidence = { $declarer } led { $best } as declarer; after your { $card } it still takes the trick. { $player } plays last.
+coach-lesson-partner-overtake-ways = { $player } can beat it { $way ->
+        [both] with a higher card ({ $cards }) or, holding no { $class }, with a trump
+        [trump] only when holding no { $class }, with a trump
+       *[follow] with a higher card ({ $cards })
+    }. { $certainty ->
+        [certain] That is certain: whatever the concealed cards, { $player } holds such a card.
+       *[possible] That is possible, not certain: it depends on cards you have not seen.
+    }
+coach-lesson-partner-overtake-rule = { $case ->
+        [trumpf] Rule (ISkO): { $player } must follow with a trump if possible; only a higher trump wins.
+       *[suit] Rule (ISkO): { $player } must follow { $class } if possible; then only a higher { $class } card wins. Without { $class }, any trump wins.
+    }
+coach-lesson-partner-overtake-exception = Note: being able to beat it does not mean your partner will. This says nothing about later tricks or about which card you should have played.
+coach-lesson-partner-overtake-transfer = When the declarer leads and your partner sits behind you: with which cards can your partner still beat the declarer's card?
 coach-holder-skat = The Skat
 coach-class-trumps = trumps
 coach-class-jacks = Jacks

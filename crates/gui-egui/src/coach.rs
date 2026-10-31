@@ -10,9 +10,10 @@
 //! comparison, figures, facts and assumptions are its details (D-52).
 
 use skat_app::coach_model::{
-    Amount, Assumption, Basis, CardClass, ComparedOption, Consideration, Decision, Estimate,
-    Follow, Hints, Judgement, LessonContent, Moment, MomentKind, MoveReview, Note, Objective,
-    Observation, Place, Reason, Role, Situation, Stage, TrumpfSets, Warning,
+    Abstich, Amount, Assumption, Basis, CardClass, Certainty, ComparedOption, Consideration,
+    Decision, Estimate, Follow, Hints, Judgement, LessonContent, Moment, MomentKind, MoveReview,
+    Note, Objective, Observation, Overtake, Place, Reason, Role, Situation, Stage, TrumpfSets,
+    Warning,
 };
 use skat_app::{
     Action, CardSet, Contract, Debriefing, GameType, LastMove, PlayerId, Seat, TableView,
@@ -224,11 +225,14 @@ fn card_list(i18n: &I18n, cards: CardSet, game: GameType) -> String {
 }
 
 /// The attention question of a lesson, before the move (D-49: it names no
-/// option and gives no answer).
+/// option and gives no answer). Mechanisms need the move and have none.
 fn lesson_question(i18n: &I18n, lesson: &LessonContent) -> Vec<Line> {
     let id = match lesson {
         LessonContent::RemainingTrumpf { .. } => "coach-lesson-remaining-trumpf-question",
         LessonContent::ProvenVoid { .. } => "coach-lesson-proven-void-question",
+        LessonContent::TrumpfVulnerability { .. } | LessonContent::PartnerOvertake { .. } => {
+            return Vec::new();
+        }
     };
     vec![
         line(i18n.t("coach-section-lesson"), Style::Heading),
@@ -239,8 +243,22 @@ fn lesson_question(i18n: &I18n, lesson: &LessonContent) -> Vec<Line> {
 /// A lesson after the move: the evidence with the cards it rests on, the
 /// exception and the transfer question.
 pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line> {
-    let mut out = vec![line(i18n.t("coach-section-lesson-review"), Style::Heading)];
+    let heading = match lesson {
+        LessonContent::RemainingTrumpf { .. } | LessonContent::ProvenVoid { .. } => {
+            "coach-section-lesson-review"
+        }
+        LessonContent::TrumpfVulnerability { .. } | LessonContent::PartnerOvertake { .. } => {
+            "coach-section-lesson-mechanism"
+        }
+    };
+    let mut out = vec![line(i18n.t(heading), Style::Heading)];
     match lesson {
+        LessonContent::TrumpfVulnerability { threats, .. } => {
+            out.extend(trumpf_vulnerability(i18n, view, threats));
+        }
+        LessonContent::PartnerOvertake { game, overtake } => {
+            out.extend(partner_overtake(i18n, view, *game, overtake));
+        }
         LessonContent::RemainingTrumpf { game, sets } => {
             out.extend(remaining_trumpf(i18n, *game, sets));
         }
@@ -298,6 +316,125 @@ pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line
         }
     }
     out
+}
+
+fn certainty(c: Certainty) -> &'static str {
+    match c {
+        Certainty::Possible => "possible",
+        Certainty::Certain => "certain",
+    }
+}
+
+/// The Abstich mechanism: per opponent the condition and whether it is
+/// possible or certain; the rule, the exception and the transfer question.
+fn trumpf_vulnerability(i18n: &I18n, view: &TableView, threats: &[Abstich]) -> Vec<Line> {
+    let Some(first) = threats.first() else {
+        return Vec::new();
+    };
+    let suit = text::suit(i18n, first.card.suit());
+    let mut out: Vec<Line> = threats
+        .iter()
+        .map(|t| {
+            line(
+                i18n.tf(
+                    "coach-lesson-trumpf-vulnerability-evidence",
+                    &[
+                        (
+                            "player",
+                            text::player(i18n, seat_player(view, t.seat)).into(),
+                        ),
+                        ("card", text::card(i18n, t.card).into()),
+                        ("suit", suit.clone().into()),
+                        ("certainty", certainty(t.certainty).into()),
+                        ("count", t.suit_unseen.len().into()),
+                        ("trumps", t.trumpf_unseen.len().into()),
+                    ],
+                ),
+                Style::Normal,
+            )
+        })
+        .collect();
+    out.push(line(
+        i18n.tf(
+            "coach-lesson-trumpf-vulnerability-rule",
+            &[("suit", suit.into())],
+        ),
+        Style::Normal,
+    ));
+    out.push(line(
+        i18n.t("coach-lesson-trumpf-vulnerability-exception"),
+        Style::Normal,
+    ));
+    out.push(line(
+        i18n.t("coach-lesson-trumpf-vulnerability-transfer"),
+        Style::Strong,
+    ));
+    out
+}
+
+/// The partner-overtake mechanism: the trick, the ways the partner can beat
+/// the declarer's card, possible or certain; the rule, the exception and
+/// the transfer question.
+fn partner_overtake(i18n: &I18n, view: &TableView, game: GameType, o: &Overtake) -> Vec<Line> {
+    let partner = text::player(i18n, seat_player(view, o.partner));
+    let (class, case) = match o.led {
+        Follow::Trumpf => (i18n.t("coach-lesson-class-trumpf"), "trumpf"),
+        Follow::Farbe(suit) => (text::suit(i18n, suit), "suit"),
+    };
+    let way = match (o.higher.is_empty(), o.trumping) {
+        (false, true) => "both",
+        (true, true) => "trump",
+        _ => "follow",
+    };
+    vec![
+        line(
+            i18n.tf(
+                "coach-lesson-partner-overtake-evidence",
+                &[
+                    (
+                        "declarer",
+                        text::player(i18n, seat_player(view, o.declarer)).into(),
+                    ),
+                    ("best", text::card(i18n, o.best).into()),
+                    ("card", text::card(i18n, o.card).into()),
+                    ("player", partner.clone().into()),
+                ],
+            ),
+            Style::Normal,
+        ),
+        line(
+            i18n.tf(
+                "coach-lesson-partner-overtake-ways",
+                &[
+                    ("player", partner.clone().into()),
+                    ("way", way.into()),
+                    ("cards", card_list(i18n, o.higher, game).into()),
+                    ("class", class.clone().into()),
+                    ("certainty", certainty(o.certainty).into()),
+                ],
+            ),
+            Style::Normal,
+        ),
+        line(
+            i18n.tf(
+                "coach-lesson-partner-overtake-rule",
+                &[
+                    ("player", partner.into()),
+                    ("class", class.into()),
+                    ("case", case.into()),
+                ],
+            ),
+            Style::Normal,
+        ),
+        line(
+            i18n.t("coach-lesson-partner-overtake-exception"),
+            Style::Normal,
+        ),
+        line(
+            i18n.t("coach-lesson-partner-overtake-transfer"),
+            Style::Strong,
+        ),
+    ]
 }
 
 fn remaining_trumpf(i18n: &I18n, game: GameType, sets: &TrumpfSets) -> Vec<Line> {
@@ -1130,6 +1267,7 @@ mod tests {
             chosen: chosen.action,
             best: Some(Action::Play(BEST)),
             reliability: model::Reliability::Reliable,
+            mechanisms: Vec::new(),
         };
         model::MoveReview {
             decision: Decision::Card,
@@ -1540,6 +1678,123 @@ mod tests {
             super::lesson(&de, &view, &null)[2]
                 .text
                 .starts_with("Im Null gibt es keinen Trumpf")
+        );
+    }
+
+    #[test]
+    fn trumpf_vulnerability_states_the_condition_and_certainty() {
+        let view = table();
+        let seat = Seat::Hinterhand;
+        let threat = model::Abstich {
+            seat,
+            card: Card::new(Suit::Pik, Rank::Ass),
+            certainty: Certainty::Possible,
+            suit_unseen: CardSet::single(Card::new(Suit::Pik, Rank::Zehn))
+                | Card::new(Suit::Pik, Rank::Neun).into(),
+            trumpf_unseen: CardSet::single(Card::bube(Suit::Karo)),
+        };
+        let lesson = LessonContent::TrumpfVulnerability {
+            game: GameType::Farbe(Suit::Kreuz),
+            threats: vec![threat],
+        };
+        let de = I18n::new(Language::De);
+        let p = text::player(&de, seat_player(&view, seat));
+        let expected: Vec<String> = [
+            "Was in diesem Stich möglich war",
+            "{p} spielt in diesem Stich nach deiner Karte (Pik-Ass). {p} kann nur stechen, wenn er kein Pik mehr und mindestens einen Trumpf hat. Beides ist möglich, nicht sicher: 2 Pik und 1 Trumpf hast du nicht gesehen.",
+            "Regel (ISkO): Wer bedienen kann, muss bedienen. Nur wer kein Pik hat, darf stechen – oder stattdessen abwerfen.",
+            "Achtung: Stechen können heißt nicht stechen werden. Ein möglicher Abstich allein zeigt nicht, dass vorher Trumpfziehen besser gewesen wäre; die Bewertung deines Zugs oben ist ein eigenes Modellurteil.",
+            "Bevor du ein Ass oder eine Zehn einer Fehlfarbe spielst: Wer spielt nach dir, kann er in der Farbe frei sein – und hat er noch Trumpf?",
+        ]
+        .iter()
+        .map(|e| e.replace("{p}", &p))
+        .collect();
+        assert_eq!(texts(&super::lesson(&de, &view, &lesson)), expected);
+        // Certain, in English.
+        let en = I18n::new(Language::En);
+        let p = text::player(&en, seat_player(&view, seat));
+        let certain = LessonContent::TrumpfVulnerability {
+            game: GameType::Farbe(Suit::Kreuz),
+            threats: vec![model::Abstich {
+                certainty: Certainty::Certain,
+                ..threat
+            }],
+        };
+        assert_eq!(
+            texts(&super::lesson(&en, &view, &certain))[1],
+            format!(
+                "{p} plays after your Ace of Spades in this trick. It is certain that {p} holds no Spades and at least one trump (this follows from the cards you have seen and the proven voids), so {p} can trump it."
+            )
+        );
+        // Mechanisms have no question before the move.
+        assert!(lesson_question(&de, &lesson).is_empty());
+    }
+
+    #[test]
+    fn partner_overtake_names_the_ways_and_certainty() {
+        let view = table();
+        let overtake = model::Overtake {
+            partner: Seat::Hinterhand,
+            declarer: Seat::Vorhand,
+            best: Card::new(Suit::Pik, Rank::Koenig),
+            led: Follow::Farbe(Suit::Pik),
+            card: Card::new(Suit::Karo, Rank::Sieben),
+            certainty: Certainty::Certain,
+            higher: CardSet::single(Card::new(Suit::Pik, Rank::Ass))
+                | Card::new(Suit::Pik, Rank::Zehn).into(),
+            trumping: false,
+        };
+        let lesson = LessonContent::PartnerOvertake {
+            game: GameType::Farbe(Suit::Kreuz),
+            overtake,
+        };
+        let de = I18n::new(Language::De);
+        let p = text::player(&de, seat_player(&view, Seat::Hinterhand));
+        let d = text::player(&de, seat_player(&view, Seat::Vorhand));
+        let expected: Vec<String> = [
+            "Was in diesem Stich möglich war",
+            "{d} hat als Alleinspieler Pik-König ausgespielt; nach deiner Karte (Karo-Sieben) nimmt sie den Stich weiterhin. {p} spielt als Letzter.",
+            "{p} kann sie mit einer höheren Karte (Pik-Ass, Pik-Zehn) schlagen. Das ist sicher: Wie die verdeckten Karten auch liegen, {p} hat eine solche Karte.",
+            "Regel (ISkO): {p} muss Pik bedienen, wenn er kann; dann gewinnt nur eine höhere Pik-Karte. Ohne Pik gewinnt jeder Trumpf.",
+            "Achtung: Schlagen können heißt nicht schlagen werden. Über spätere Stiche und darüber, welche Karte du hättest spielen sollen, sagt das nichts.",
+            "Wenn der Alleinspieler ausspielt und dein Partner hinter dir sitzt: Mit welchen Karten kann er die Karte des Alleinspielers noch schlagen?",
+        ]
+        .iter()
+        .map(|e| e.replace("{p}", &p).replace("{d}", &d))
+        .collect();
+        assert_eq!(texts(&super::lesson(&de, &view, &lesson)), expected);
+        // Possible, by trumping only, in English; and a Trumpf lead.
+        let en = I18n::new(Language::En);
+        let p = text::player(&en, seat_player(&view, Seat::Hinterhand));
+        let trumping = LessonContent::PartnerOvertake {
+            game: GameType::Grand,
+            overtake: model::Overtake {
+                certainty: Certainty::Possible,
+                higher: CardSet::EMPTY,
+                trumping: true,
+                ..overtake
+            },
+        };
+        assert_eq!(
+            texts(&super::lesson(&en, &view, &trumping))[2],
+            format!(
+                "{p} can beat it only when holding no Spades, with a trump. That is possible, not certain: it depends on cards you have not seen."
+            )
+        );
+        let trumpf = LessonContent::PartnerOvertake {
+            game: GameType::Farbe(Suit::Herz),
+            overtake: model::Overtake {
+                best: Card::new(Suit::Herz, Rank::Neun),
+                led: Follow::Trumpf,
+                higher: CardSet::single(Card::bube(Suit::Kreuz)),
+                ..overtake
+            },
+        };
+        assert_eq!(
+            texts(&super::lesson(&en, &view, &trumpf))[3],
+            format!(
+                "Rule (ISkO): {p} must follow with a trump if possible; only a higher trump wins."
+            )
         );
     }
 }

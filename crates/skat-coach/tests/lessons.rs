@@ -95,9 +95,23 @@ fn hints_and_review_carry_the_void_with_its_trick() {
     };
     let h = hints(&e, Stage::Considerations);
     assert_eq!(h.lesson.as_ref(), Some(&expected));
+    // After the move the Abstich mechanism (#44) comes first for a side
+    // Ass or Zehn led: VH holds SA ST CA. Only MH can trump it, since HH
+    // has no Trumpf; the Trumpf leads keep the void lesson.
     for &action in &view.legal_actions {
         let r = review(&e, action).unwrap();
-        assert_eq!(r.lesson.as_ref(), Some(&expected), "{action:?}");
+        if ["SA", "ST", "CA"]
+            .map(|s| Action::Play(c(s)))
+            .contains(&action)
+        {
+            let Some(LessonContent::TrumpfVulnerability { threats, .. }) = &r.lesson else {
+                panic!("{action:?}: {:?}", r.lesson);
+            };
+            let seats: Vec<Seat> = threats.iter().map(|t| t.seat).collect();
+            assert_eq!(seats, [Seat::Mittelhand], "{action:?}");
+        } else {
+            assert_eq!(r.lesson.as_ref(), Some(&expected), "{action:?}");
+        }
     }
 }
 
@@ -124,7 +138,7 @@ fn remaining_trumpf_content_assigns_no_seat() {
 fn missing_evidence_falls_back_to_no_lesson() {
     let view = herz(herz_deal(), &["CJ", "H7", "HJ", "HA", "H8", "S7"]);
     let e = advise(&view, SMALL, 1, None).expect("explained");
-    assert_eq!(lesson_content(&Teaching::Fallback, &e.evidence), None);
+    assert_eq!(lesson_content(&Teaching::Fallback, &e.evidence, None), None);
     let lesson = |key: &'static str, items: Vec<usize>| Teaching::Lesson {
         id: LessonId {
             key: key.into(),
@@ -134,11 +148,11 @@ fn missing_evidence_falls_back_to_no_lesson() {
     };
     // Cited items that are absent or of another kind give no content.
     assert_eq!(
-        lesson_content(&lesson(PROVEN_VOID, vec![]), &e.evidence),
+        lesson_content(&lesson(PROVEN_VOID, vec![]), &e.evidence, None),
         None
     );
     assert_eq!(
-        lesson_content(&lesson(PROVEN_VOID, vec![999]), &e.evidence),
+        lesson_content(&lesson(PROVEN_VOID, vec![999]), &e.evidence, None),
         None
     );
     let not_void = e
@@ -148,11 +162,11 @@ fn missing_evidence_falls_back_to_no_lesson() {
         .position(|i| !matches!(i.claim, Claim::Fact(skat_coach::Observation::Void { .. })))
         .unwrap();
     assert_eq!(
-        lesson_content(&lesson(PROVEN_VOID, vec![not_void]), &e.evidence),
+        lesson_content(&lesson(PROVEN_VOID, vec![not_void]), &e.evidence, None),
         None
     );
     assert_eq!(
-        lesson_content(&lesson("unknown-lesson", vec![0]), &e.evidence),
+        lesson_content(&lesson("unknown-lesson", vec![0]), &e.evidence, None),
         None
     );
     // Before the first card nothing is taught: hints and reviews fall back.
