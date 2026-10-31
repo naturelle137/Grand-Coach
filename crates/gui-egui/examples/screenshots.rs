@@ -20,7 +20,7 @@ use gui_egui::{GrandCoachApp, Language};
 use skat_app::coach_model::{Judgement, LessonContent};
 use skat_app::{
     Action, Advice, Budget, Card, CoachLevel, CoachSettings, Debriefing, Level, Opponents, Pending,
-    SeriesLength, SessionConfig, TableView,
+    Rank, SeriesLength, SessionConfig, TableView,
 };
 
 const SIZE: [f32; 2] = [1280.0, 820.0];
@@ -30,6 +30,13 @@ const SIZE: [f32; 2] = [1280.0, 820.0];
 const NARROW: [f32; 2] = [960.0, 640.0];
 
 type Scenario = fn(&mut Harness<'_, GrandCoachApp>);
+
+/// Series seed of every scenario not in [`SEEDS`].
+const SEED: u64 = 21;
+
+/// Scenarios whose state needs another series seed: with seed 21 the
+/// human never plays second to the declarer's lead in the two games.
+const SEEDS: &[(&str, u64)] = &[("coach-lesson-overtake", 1)];
 
 const SCENARIOS: &[(&str, Scenario)] = &[
     ("launch", launch),
@@ -49,6 +56,9 @@ const SCENARIOS: &[(&str, Scenario)] = &[
     ("coach-lesson-review", coach_lesson_review),
     ("coach-lesson-review-en", coach_lesson_review_en),
     ("coach-lesson-trumpf", coach_lesson_trumpf),
+    ("coach-lesson-abstich", coach_lesson_abstich),
+    ("coach-lesson-abstich-en", coach_lesson_abstich_en),
+    ("coach-lesson-overtake", coach_lesson_overtake),
     ("coach-debriefing", coach_debriefing),
     ("coach-debriefing-details", coach_debriefing_details),
     ("coach-debriefing-en", coach_debriefing_en),
@@ -210,6 +220,94 @@ fn coach_lesson_trumpf(harness: &mut Harness<'_, GrandCoachApp>) {
     });
 }
 
+/// The note after a card that taught the Abstich mechanism (#44): the
+/// human prefers an Ass or a Zehn, so the position arises sooner.
+fn coach_lesson_abstich(harness: &mut Harness<'_, GrandCoachApp>) {
+    review_choosing(
+        harness,
+        |view| cards_of(view).find(|c| matches!(c.rank(), Rank::Ass | Rank::Zehn)),
+        |l| matches!(l, LessonContent::TrumpfVulnerability { .. }),
+    );
+}
+
+/// The same in English.
+fn coach_lesson_abstich_en(harness: &mut Harness<'_, GrandCoachApp>) {
+    coach_lesson_abstich(harness);
+    harness.state_mut().set_language(Language::En);
+    harness.run_steps(4);
+}
+
+/// The note after a card that taught the partner-overtake mechanism (#44):
+/// as second player the human prefers the last (lowest) legal card.
+fn coach_lesson_overtake(harness: &mut Harness<'_, GrandCoachApp>) {
+    review_choosing(
+        harness,
+        |view| {
+            (view.current_trick.len() == 1)
+                .then(|| cards_of(view).last())
+                .flatten()
+        },
+        |l| matches!(l, LessonContent::PartnerOvertake { .. }),
+    );
+}
+
+/// The human's legal cards in the view's order.
+fn cards_of(view: &TableView) -> impl Iterator<Item = Card> + '_ {
+    view.legal_actions.iter().filter_map(|a| match a {
+        Action::Play(card) => Some(*card),
+        _ => None,
+    })
+}
+
+/// Plays as a defender, preferring the card `choose` picks (otherwise the
+/// first legal one), until the note on an own card carries a lesson
+/// `wanted`.
+fn review_choosing(
+    harness: &mut Harness<'_, GrandCoachApp>,
+    choose: impl Fn(&TableView) -> Option<Card>,
+    wanted: impl Fn(&LessonContent) -> bool,
+) {
+    for _ in 0..400 {
+        settle(harness);
+        let v = view(harness);
+        assert!(!v.series_finished, "no lesson in the series");
+        let legal = &v.legal_actions;
+        let (label, played) = if v.acting.is_none() {
+            ("Nächstes Spiel".to_owned(), false)
+        } else if legal.contains(&Action::Pass) {
+            ("Passe".to_owned(), false)
+        } else if legal.contains(&Action::KeinKontra) {
+            ("Kein Kontra".to_owned(), false)
+        } else if let Some(card) = choose(&v).or_else(|| cards_of(&v).next()) {
+            (card_label(card), true)
+        } else {
+            panic!("no scripted click for {legal:?}");
+        };
+        click(harness, Role::Button, &label);
+        if !played {
+            continue;
+        }
+        // After the game a forced last card gets no note.
+        await_coach(harness, |view| {
+            view.result.is_some()
+                || view
+                    .coach
+                    .last_move
+                    .as_ref()
+                    .is_some_and(|m| m.note.is_some())
+        });
+        if view(harness)
+            .coach
+            .last_move
+            .and_then(|m| m.lesson)
+            .is_some_and(|l| wanted(&l))
+        {
+            return;
+        }
+    }
+    panic!("no lesson after a move");
+}
+
 /// Plays on until the note on an own card carries a lesson `wanted`.
 fn review_with(harness: &mut Harness<'_, GrandCoachApp>, wanted: impl Fn(&LessonContent) -> bool) {
     for _ in 0..20 {
@@ -365,7 +463,11 @@ fn main() {
         if !wanted.is_empty() && !wanted.iter().any(|w| w == name) {
             continue;
         }
-        let mut harness = harness(*name == "launch");
+        let seed = SEEDS
+            .iter()
+            .find(|(n, _)| n == name)
+            .map_or(SEED, |&(_, seed)| seed);
+        let mut harness = harness(*name == "launch", seed);
         scenario(&mut harness);
         if name.ends_with("-narrow") {
             harness.set_size(NARROW.into());
@@ -383,9 +485,9 @@ fn main() {
 
 /// The app with a small series; `launch` opens the "new series" dialog
 /// before the first frame, as `main` does.
-fn harness(launch: bool) -> Harness<'static, GrandCoachApp> {
+fn harness(launch: bool, seed: u64) -> Harness<'static, GrandCoachApp> {
     let config = SessionConfig {
-        seed: 21,
+        seed,
         series: SeriesLength::Fixed(2),
         kontra_re: true,
         opponents: Opponents::Levels([Level::Easy; 2]),

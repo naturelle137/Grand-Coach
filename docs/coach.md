@@ -31,8 +31,8 @@ first lesson of the catalogue whose `Lesson::check` applies, otherwise
 `Teaching::Fallback`: only the model comparison, no strategic reason.
 `Hints` carry the evidence and at most a fact lesson, since mechanisms
 need the move; `MoveReview` carries evidence, comparison and teaching.
-The catalogue holds the two exact lessons below; elsewhere the teaching
-is the fallback.
+The catalogue holds the two mechanisms and the two exact lessons below,
+in that order; elsewhere the teaching is the fallback.
 
 ## Exact lessons (D-55)
 
@@ -71,6 +71,52 @@ The debriefing moments do not show lessons yet. The Trumpf sets do not
 appear as a separate fact line in the considerations; `TrumpsOut` still
 does. The fixtures are in `skat-analysis/tests/exact_lessons.rs` and
 `skat-coach/tests/lessons.rs`; learner UAT is pending
+([coach-validation.md](coach-validation.md)).
+
+## Card-play mechanisms (D-56)
+
+Two mechanism lessons (`LessonKind::Mechanism`, version 1, supported) on
+the trick in progress after the chosen card, Farbspiel and Grand. They
+apply only after the move, only with a `Reliable` comparison, and only
+when `Comparison::mechanisms` holds the mechanism: an exact deduction
+from the view (`skat_analysis::mechanism`), never the estimates. A
+higher utility of the chosen card triggers nothing; an incomplete,
+cancelled or screened analysis gives the fallback. The text never says
+which card was better; the note on the move stays a separate model
+judgement.
+
+| Key | Roles | Position | Condition (possible / certain) |
+|-----|-------|----------|--------------------------------|
+| `trumpf-vulnerability` | declarer, defender | the seat leads or follows the led side suit with its Ass or Zehn, which wins the trick so far | each opponent playing later in the trick holds no card of that suit **and** at least one Trumpf in some / every hidden distribution |
+| `partner-overtake` | defender | the declarer led, the seat plays second without taking the trick, the partner plays last | the partner holds a higher card of the led class or, with a led side suit, none of it and a Trumpf, in some / every hidden distribution |
+
+Hidden distributions are those `sampling` admits: hand and Skat sizes,
+seen cards (own hand, played, own Skat, Ouvert cards) and proven voids.
+A known Skat (declarer after pickup) and an Ouvert declarer's open cards
+narrow them; an unknown Skat can hold up to two cards. Rule source: the
+follow-suit rule of the ISkO (who can follow must; who cannot may trump
+or discard).
+
+The note after the move shows, per seat, the condition, whether it is
+possible or certain, the unseen cards of the suit and Trumpf (Abstich) or
+the cards and ways that beat the declarer's card (overtaking), the rule,
+the exception and a transfer question, in German and English.
+
+What they do not claim:
+
+- That the opponent or partner *will* trump or overtake, who wins a later
+  trick, or any plan over several tricks.
+- That drawing Trumpf (or any other card) would have been better: a
+  possible Abstich is a topic to check, not a judgement of the move.
+- Anything about the partner trumping the seat's own card, a partner who
+  already played, or a declarer card not yet played.
+
+Not covered: Null, a seat in third position (nobody after it), side
+cards other than Ass and Zehn, the case where the partner certainly
+cannot overtake. The fixtures are in `skat-analysis/tests/mechanisms.rs`
+(hand-derived positions, a hidden-deal substitution and an exhaustive
+reference over every consistent distribution of random positions) and
+`skat-coach/tests/mechanisms.rs`; learner UAT is pending
 ([coach-validation.md](coach-validation.md)).
 
 Win chances are those of the deciding seat's party; the coach labels the

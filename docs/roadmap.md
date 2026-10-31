@@ -22,7 +22,11 @@ D-53: evidence contract) are implemented. Package K
 (#51, D-54) prepared the evidence checklist and learner UAT protocol in
 [coach-validation.md](coach-validation.md). Package C (#43, D-55) ships the
 first two exact lessons, remaining Trumpf and proven voids
-([coach.md](coach.md#exact-lessons-d-55)); no learner UAT has been run yet.
+([coach.md](coach.md#exact-lessons-d-55)). Package D (#44, D-56) adds two
+narrow card-play mechanisms, a possible or certain Abstich and partner
+overtaking in the current trick
+([coach.md](coach.md#card-play-mechanisms-d-56)). No learner UAT has been
+run yet.
 
 The milestones build on each other (see the architecture in
 [vision.md](vision.md)). A milestone is done when its "Done when …" holds.

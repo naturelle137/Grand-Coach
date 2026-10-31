@@ -137,7 +137,11 @@ fn applies(e: &Evidence, key: &str) -> Check {
 
 #[test]
 fn the_catalogue_holds_two_exact_card_play_lessons() {
-    let all = catalogue();
+    // The mechanisms (#44) come first; `tests/mechanisms.rs` covers them.
+    let all: Vec<_> = catalogue()
+        .into_iter()
+        .filter(|l| l.kind == LessonKind::Fact)
+        .collect();
     let keys: Vec<&str> = all.iter().map(|l| l.id.key.as_ref()).collect();
     assert_eq!(keys, [PROVEN_VOID, REMAINING_TRUMPF]);
     for l in &all {
@@ -157,7 +161,7 @@ fn the_catalogue_holds_two_exact_card_play_lessons() {
         lesson(REMAINING_TRUMPF).applies.games,
         [GameKind::Suit, GameKind::Grand]
     );
-    assert_eq!(CONTRACT_VERSION, 2);
+    assert_eq!(CONTRACT_VERSION, 3);
 }
 
 #[test]

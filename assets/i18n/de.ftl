@@ -323,6 +323,29 @@ coach-lesson-proven-void-exception = { $case ->
        *[suit] Das schließt nur { $class } aus. Wer frei ist, darf stechen oder abwerfen – ob er das tut und wer den Stich gewinnt, folgt daraus nicht.
     }
 coach-lesson-proven-void-transfer = Wenn wieder { $class } gespielt wird: Wer kann dann noch bedienen?
+coach-section-lesson-mechanism = Was in diesem Stich möglich war
+coach-lesson-trumpf-vulnerability-evidence = { $player } spielt in diesem Stich nach deiner Karte ({ $card }). { $certainty ->
+        [certain] Sicher ist: { $player } hat kein { $suit } mehr und mindestens einen Trumpf (folgt aus den gesehenen Karten und den bewiesenen Fehlfarben) – { $player } kann also stechen.
+       *[possible] { $player } kann nur stechen, wenn er kein { $suit } mehr und mindestens einen Trumpf hat. Beides ist möglich, nicht sicher: { $count } { $suit } und { $trumps } Trumpf hast du nicht gesehen.
+    }
+coach-lesson-trumpf-vulnerability-rule = Regel (ISkO): Wer bedienen kann, muss bedienen. Nur wer kein { $suit } hat, darf stechen – oder stattdessen abwerfen.
+coach-lesson-trumpf-vulnerability-exception = Achtung: Stechen können heißt nicht stechen werden. Ein möglicher Abstich allein zeigt nicht, dass vorher Trumpfziehen besser gewesen wäre; die Bewertung deines Zugs oben ist ein eigenes Modellurteil.
+coach-lesson-trumpf-vulnerability-transfer = Bevor du ein Ass oder eine Zehn einer Fehlfarbe spielst: Wer spielt nach dir, kann er in der Farbe frei sein – und hat er noch Trumpf?
+coach-lesson-partner-overtake-evidence = { $declarer } hat als Alleinspieler { $best } ausgespielt; nach deiner Karte ({ $card }) nimmt sie den Stich weiterhin. { $player } spielt als Letzter.
+coach-lesson-partner-overtake-ways = { $player } kann sie { $way ->
+        [both] mit einer höheren Karte ({ $cards }) oder, ohne { $class }, mit einem Trumpf
+        [trump] nur ohne { $class } mit einem Trumpf
+       *[follow] mit einer höheren Karte ({ $cards })
+    } schlagen. { $certainty ->
+        [certain] Das ist sicher: Wie die verdeckten Karten auch liegen, { $player } hat eine solche Karte.
+       *[possible] Das ist möglich, nicht sicher: Es hängt von Karten ab, die du nicht gesehen hast.
+    }
+coach-lesson-partner-overtake-rule = { $case ->
+        [trumpf] Regel (ISkO): { $player } muss Trumpf bedienen, wenn er kann; nur ein höherer Trumpf gewinnt.
+       *[suit] Regel (ISkO): { $player } muss { $class } bedienen, wenn er kann; dann gewinnt nur eine höhere { $class }-Karte. Ohne { $class } gewinnt jeder Trumpf.
+    }
+coach-lesson-partner-overtake-exception = Achtung: Schlagen können heißt nicht schlagen werden. Über spätere Stiche und darüber, welche Karte du hättest spielen sollen, sagt das nichts.
+coach-lesson-partner-overtake-transfer = Wenn der Alleinspieler ausspielt und dein Partner hinter dir sitzt: Mit welchen Karten kann er die Karte des Alleinspielers noch schlagen?
 coach-holder-skat = Der Skat
 coach-class-trumps = Trümpfe
 coach-class-jacks = Buben

@@ -12,7 +12,8 @@
 //!   names no action, so it may be shown before the move (D-49).
 //! - [`Comparison`]: after the move, whether the model comparison of the
 //!   chosen option with the best one is reliable. Only a complete analysis
-//!   with both options evaluated on every distribution is.
+//!   with both options evaluated on every distribution is. It also carries
+//!   the exact [`Mechanism`]s of the trick after the chosen card.
 //! - [`Lesson`]: a stable, versioned lesson definition with applicability,
 //!   permitted evidence classes, conditions, exclusions and an explicit
 //!   support status. [`Lesson::check`] is the predicate; the coach only
@@ -28,9 +29,10 @@ use std::borrow::Cow;
 use skat_core::{Action, BidRecord, Call, Card, CardSet, GameType, Phase, PlayerView, Seat};
 
 use crate::analysis::{Analysis, CardClass, Inference, Observation, Status, utility};
+use crate::mechanism::{Mechanism, MechanismKind, mechanisms};
 
 /// Version of this contract; raised when the meaning of a field changes.
-pub const CONTRACT_VERSION: u16 = 2;
+pub const CONTRACT_VERSION: u16 = 3;
 
 /// The deciding seat's role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -354,7 +356,7 @@ pub enum Reliability {
 
 /// The model comparison of a chosen option with the best one (after the
 /// move). Carries no figures; those stay with the estimates.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Comparison {
     /// The chosen option.
@@ -365,6 +367,11 @@ pub struct Comparison {
     pub best: Option<Action>,
     /// Whether the comparison may back a claim.
     pub reliability: Reliability,
+    /// Exact mechanisms of the trick after the chosen card, from the view
+    /// only ([`mechanisms`]); independent of the estimates. Only a mechanism
+    /// lesson with a reliable comparison may cite them, and none of them
+    /// says the chosen option is better or worse.
+    pub mechanisms: Vec<Mechanism>,
 }
 
 /// The comparison of `chosen` with the best option in `analysis` of `view`.
@@ -398,6 +405,7 @@ pub fn compare(view: &PlayerView, analysis: &Analysis, chosen: Action) -> Option
         chosen,
         best: best.map(|(a, _)| a),
         reliability,
+        mechanisms: mechanisms(view, chosen),
     })
 }
 
@@ -505,6 +513,10 @@ pub enum Condition {
     Revealed,
     /// The analysis finished.
     Complete,
+    /// The comparison of the chosen option carries an exact mechanism of
+    /// this kind (needs [`EvidenceClass::Mechanism`] permitted; after the
+    /// move only). Cites no evidence item.
+    Mechanism(MechanismKind),
 }
 
 /// A lesson definition: when it applies and what it may rest on.
@@ -605,7 +617,7 @@ impl Lesson {
         }
         let mut items = Vec::new();
         for &condition in &self.requires {
-            match self.holds(evidence, condition) {
+            match self.holds(evidence, comparison, condition) {
                 Some(cited) => items.extend(cited),
                 None => return Check::Fails(Unmet::Missing(condition)),
             }
@@ -613,7 +625,7 @@ impl Lesson {
         if let Some(&condition) = self
             .excludes
             .iter()
-            .find(|&&c| self.holds(evidence, c).is_some())
+            .find(|&&c| self.holds(evidence, comparison, c).is_some())
         {
             return Check::Fails(Unmet::Excluded(condition));
         }
@@ -624,7 +636,12 @@ impl Lesson {
 
     /// The items citing `condition` if it holds (possibly none), `None` if
     /// it does not hold.
-    fn holds(&self, evidence: &Evidence, condition: Condition) -> Option<Vec<usize>> {
+    fn holds(
+        &self,
+        evidence: &Evidence,
+        comparison: Option<&Comparison>,
+        condition: Condition,
+    ) -> Option<Vec<usize>> {
         let cite = |class: EvidenceClass, matches: &dyn Fn(&Claim) -> bool| {
             let cited: Vec<usize> = evidence
                 .items
@@ -666,6 +683,9 @@ impl Lesson {
             Condition::OwnSkat => evidence.snapshot.own_skat.map(|_| Vec::new()),
             Condition::Revealed => evidence.snapshot.revealed.map(|_| Vec::new()),
             Condition::Complete => (evidence.status == Status::Complete).then(Vec::new),
+            Condition::Mechanism(kind) => (self.permitted.contains(&EvidenceClass::Mechanism)
+                && comparison.is_some_and(|c| c.mechanisms.iter().any(|m| m.kind() == kind)))
+            .then(Vec::new),
         }
     }
 }
@@ -676,20 +696,37 @@ pub const REMAINING_TRUMPF: &str = "remaining-trumpf";
 /// Key of the lesson on a void proven by not following suit ([`catalogue`]).
 pub const PROVEN_VOID: &str = "proven-void";
 
-/// The lesson catalogue, in selection order (`docs/coach.md`). Both are
-/// fact lessons on exact card knowledge during card play, backed by the
-/// fixtures in `tests/lesson.rs`:
+/// Key of the mechanism lesson on a full side card an opponent playing
+/// later can trump ([`catalogue`], [`crate::mechanism::Abstich`]).
+pub const TRUMPF_VULNERABILITY: &str = "trumpf-vulnerability";
+
+/// Key of the mechanism lesson on the partner beating the declarer's card
+/// ([`catalogue`], [`crate::mechanism::Overtake`]).
+pub const PARTNER_OVERTAKE: &str = "partner-overtake";
+
+/// The lesson catalogue, in selection order (`docs/coach.md`). Backed by
+/// the fixtures in `tests/exact_lessons.rs` and `tests/mechanisms.rs`:
 ///
-/// 1. [`PROVEN_VOID`]: a seat did not follow the led class in the trick in
+/// 1. [`TRUMPF_VULNERABILITY`] (mechanism): after the seat's Ass or Zehn of
+///    the led side suit, winning so far, an opponent playing later in the
+///    trick can trump it, possibly or certainly (Farbspiel and Grand,
+///    declarer and defenders).
+/// 2. [`PARTNER_OVERTAKE`] (mechanism): a defender played second to the
+///    declarer's lead without taking the trick; the partner, playing last,
+///    can beat the declarer's card, possibly or certainly (Farbspiel and
+///    Grand).
+/// 3. [`PROVEN_VOID`]: a seat did not follow the led class in the trick in
 ///    progress or the last completed trick, so it holds no card of that
 ///    class (Farbspiel, Grand, Null). It teaches an exclusion only.
-/// 2. [`REMAINING_TRUMPF`]: a Trumpf was played in the trick in progress or
+/// 4. [`REMAINING_TRUMPF`]: a Trumpf was played in the trick in progress or
 ///    the last completed trick; where the Trumpf are, as far as the seat
 ///    knows (Farbspiel and Grand; Null has no Trumpf). Unseen Trumpf are
 ///    not assigned to a seat.
 ///
-/// Older facts do not trigger them again, so the same fact is not repeated
-/// at every card.
+/// Mechanisms apply after the move only, with a reliable comparison, and
+/// never because the chosen option scored higher: they need the exact
+/// mechanism of the chosen card. Older facts do not trigger the fact
+/// lessons again, so the same fact is not repeated at every card.
 pub fn catalogue() -> Vec<Lesson> {
     let card_play = |games: Vec<GameKind>, kind: FactKind| Lesson {
         id: LessonId {
@@ -710,7 +747,32 @@ pub fn catalogue() -> Vec<Lesson> {
         requires: vec![Condition::Recent(kind)],
         excludes: Vec::new(),
     };
+    let mechanism = |roles: Vec<Role>, kind: MechanismKind| Lesson {
+        id: LessonId {
+            key: Cow::Borrowed(match kind {
+                MechanismKind::Abstich => TRUMPF_VULNERABILITY,
+                MechanismKind::Overtake => PARTNER_OVERTAKE,
+            }),
+            version: 1,
+        },
+        kind: LessonKind::Mechanism,
+        support: Support::Supported,
+        applies: Applicability {
+            phases: vec![Phase::Spiel],
+            roles,
+            games: vec![GameKind::Suit, GameKind::Grand],
+        },
+        permitted: vec![
+            EvidenceClass::Exact,
+            EvidenceClass::Comparison,
+            EvidenceClass::Mechanism,
+        ],
+        requires: vec![Condition::Mechanism(kind)],
+        excludes: Vec::new(),
+    };
     vec![
+        mechanism(vec![Role::Declarer, Role::Defender], MechanismKind::Abstich),
+        mechanism(vec![Role::Defender], MechanismKind::Overtake),
         card_play(
             vec![GameKind::Suit, GameKind::Grand, GameKind::Null],
             FactKind::Void,

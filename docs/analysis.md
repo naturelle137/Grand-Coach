@@ -50,7 +50,9 @@ It reuses one `Analysis`; it runs no search of its own.
   option with the best one by `utility` (evaluated on the most
   distributions, ties: first legal). It is `Reliable` only for a complete
   analysis with the chosen option evaluated on every distribution;
-  otherwise `Incomplete`, `Screened` or `NotEvaluated`.
+  otherwise `Incomplete`, `Screened` or `NotEvaluated`. It also carries
+  the exact `mechanisms` of the trick after the chosen card (below); they
+  do not depend on the estimates.
 - A `Lesson` has a stable key and version, applicability (phases, roles,
   game kinds), permitted evidence classes, required and excluding
   conditions and a support status. `Lesson::check` cites the matching
@@ -58,12 +60,27 @@ It reuses one `Analysis`; it runs no search of its own.
   items. A `Fact` lesson may not cite comparisons and holds with an
   incomplete search; a `Mechanism` needs a comparison (after the move)
   that is reliable. Unsupported lessons never apply.
-- `catalogue()` holds the two exact lessons of D-55, `proven-void` and
-  `remaining-trumpf` ([coach.md](coach.md#exact-lessons-d-55)). The
-  condition `Recent(kind)` holds for facts resting on a card of the trick
-  in progress or the last completed trick, so a lesson is not repeated at
-  every card. Contract version 2: `Source::Trick` names the led card and
-  the card played.
+- `catalogue()` holds the two mechanisms of D-56,
+  `trumpf-vulnerability` and `partner-overtake`
+  ([coach.md](coach.md#card-play-mechanisms-d-56)), then the two exact
+  lessons of D-55, `proven-void` and `remaining-trumpf`
+  ([coach.md](coach.md#exact-lessons-d-55)). The condition `Recent(kind)`
+  holds for facts resting on a card of the trick in progress or the last
+  completed trick, so a lesson is not repeated at every card;
+  `Mechanism(kind)` holds when the comparison carries a mechanism of that
+  kind. Contract version 3: `Comparison::mechanisms` (version 2:
+  `Source::Trick` names the led card and the card played).
+- `mechanism::mechanisms(view, action)` (D-56) decides two exact
+  questions about the trick after the chosen card, from the view only:
+  can an opponent playing later trump the seat's winning side Ass or Zehn
+  (`Abstich`), and can the partner, playing last, beat the declarer's led
+  card (`Overtake`). Each is `Possible` (some hidden distribution within
+  the hard constraints of `sampling` meets it) or `Certain` (all do).
+  Feasibility is exact without enumeration: hidden cards go to at most
+  three places of fixed size, so a distribution exists if and only if,
+  for every set of places, the cards allowed only there fit (Hall's
+  condition). Conditions are checked jointly; a Trumpf count or a void
+  alone proves nothing for a seat.
 
 ## Knowledge (card counter)
 

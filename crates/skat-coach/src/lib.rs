@@ -22,8 +22,9 @@
 //! Lessons (D-53): the analysis gathers the permitted [`Evidence`] and
 //! checks lesson predicates ([`Lesson::check`]); the coach only selects a
 //! lesson with [`teach`] and falls back to the model comparison when none
-//! applies. [`lesson_content`] hands the cited facts of a taught lesson to
-//! the frontend as plain data.
+//! applies. [`lesson_content`] hands the cited facts of a taught lesson,
+//! or the exact mechanisms of the chosen card, to the frontend as plain
+//! data.
 
 use skat_analysis::lesson::{catalogue, compare as compare_options, gather};
 use skat_analysis::{Budget, Cancel, analyze, utility};
@@ -31,8 +32,10 @@ use skat_core::{Action, Card, Contract, GameType, KontraLevel, Phase, PlayerView
 
 pub use skat_analysis::lesson::{
     Check, Claim, Comparison, Evidence, EvidenceClass, Item, Lesson, LessonId, LessonKind,
-    PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Snapshot, Source,
+    PARTNER_OVERTAKE, PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Snapshot, Source,
+    TRUMPF_VULNERABILITY,
 };
+pub use skat_analysis::mechanism::{Abstich, Certainty, Mechanism, MechanismKind, Overtake};
 
 pub use skat_analysis::sampling::Place;
 pub use skat_analysis::{
@@ -353,7 +356,8 @@ pub fn teach(lessons: &[Lesson], evidence: &Evidence, comparison: Option<&Compar
 /// What a taught lesson says, as plain data for the frontend's copy
 /// (`docs/coach.md`): the attention question before the move, the
 /// evidence, exception and transfer question after it. Taken from the
-/// cited exact evidence only; nothing is computed here.
+/// cited exact evidence or the comparison's exact mechanisms only; nothing
+/// is computed here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LessonContent {
@@ -371,6 +375,23 @@ pub enum LessonContent {
         game: GameType,
         /// The new voids, each with the card that proved it.
         voids: Vec<ProvenVoid>,
+    },
+    /// [`TRUMPF_VULNERABILITY`]: after the move only. Opponents playing
+    /// later in the trick who can trump the chosen side card, each possibly
+    /// or certainly; never that they will.
+    TrumpfVulnerability {
+        /// The game (Farbspiel or Grand).
+        game: GameType,
+        /// One entry per opponent, in play order.
+        threats: Vec<Abstich>,
+    },
+    /// [`PARTNER_OVERTAKE`]: after the move only. The partner, playing
+    /// last, can beat the declarer's card, possibly or certainly.
+    PartnerOvertake {
+        /// The game (Farbspiel or Grand).
+        game: GameType,
+        /// The mechanism.
+        overtake: Overtake,
     },
 }
 
@@ -390,16 +411,40 @@ pub struct ProvenVoid {
     pub card: Card,
 }
 
-/// The content of `teaching` from the items of `evidence` it cites; `None`
-/// for the fallback, an unknown lesson or missing evidence (then the
-/// frontend shows no lesson).
-pub fn lesson_content(teaching: &Teaching, evidence: &Evidence) -> Option<LessonContent> {
+/// The content of `teaching` from the items of `evidence` it cites, or for
+/// a mechanism from the mechanisms of the chosen option's `comparison`
+/// (only if it is reliable); `None` for the fallback, an unknown lesson or
+/// missing evidence (then the frontend shows no lesson).
+pub fn lesson_content(
+    teaching: &Teaching,
+    evidence: &Evidence,
+    comparison: Option<&Comparison>,
+) -> Option<LessonContent> {
     let Teaching::Lesson { id, items } = teaching else {
         return None;
     };
     let game = evidence.snapshot.game?;
     let cited = || items.iter().filter_map(|&i| evidence.items.get(i));
+    let mechanisms = || {
+        comparison
+            .filter(|c| c.reliability == Reliability::Reliable)
+            .map_or(&[][..], |c| c.mechanisms.as_slice())
+            .iter()
+    };
     match id.key.as_ref() {
+        TRUMPF_VULNERABILITY => {
+            let threats: Vec<Abstich> = mechanisms()
+                .filter_map(|m| match m {
+                    Mechanism::Abstich(a) => Some(*a),
+                    Mechanism::Overtake(_) => None,
+                })
+                .collect();
+            (!threats.is_empty()).then_some(LessonContent::TrumpfVulnerability { game, threats })
+        }
+        PARTNER_OVERTAKE => mechanisms().find_map(|m| match m {
+            Mechanism::Overtake(o) => Some(LessonContent::PartnerOvertake { game, overtake: *o }),
+            Mechanism::Abstich(_) => None,
+        }),
         REMAINING_TRUMPF => cited().find_map(|item| match item.claim {
             Claim::Fact(Observation::TrumpfSets(sets)) => {
                 Some(LessonContent::RemainingTrumpf { game, sets })
@@ -579,7 +624,7 @@ pub fn hints(e: &Explanation, stage: Stage) -> Hints {
         basis: e.basis,
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
-        lesson: lesson_content(&teaching, &e.evidence),
+        lesson: lesson_content(&teaching, &e.evidence, None),
         teaching,
     }
 }
@@ -666,7 +711,7 @@ impl MoveReview {
 /// Judges `chosen` in the decision `e` explains. `None` if `chosen` is not
 /// one of its options.
 pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
-    let comparison = *e.comparisons.iter().find(|c| c.chosen == chosen)?;
+    let comparison = e.comparisons.iter().find(|c| c.chosen == chosen)?.clone();
     let teaching = teach(&catalogue(), &e.evidence, Some(&comparison));
     let chosen = e.option(chosen)?.clone();
     let trap = e
@@ -691,8 +736,8 @@ pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
         basis: e.basis,
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
+        lesson: lesson_content(&teaching, &e.evidence, Some(&comparison)),
         comparison,
-        lesson: lesson_content(&teaching, &e.evidence),
         teaching,
     })
 }

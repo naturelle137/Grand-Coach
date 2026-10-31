@@ -13,7 +13,8 @@
 //!   shared continuation policy ([`policy`]), within a deterministic
 //!   [`Budget`],
 //! - simple hand measures ([`hand`]),
-//! - the evidence contract for coach lessons ([`lesson`]).
+//! - the evidence contract for coach lessons ([`lesson`]) and the exact
+//!   card-play mechanisms they may cite ([`mechanism`]).
 //!
 //! Semantics, budgets and measured latency: `docs/analysis.md`.
 
@@ -24,6 +25,7 @@ pub mod evidence;
 pub mod hand;
 mod knowledge;
 pub mod lesson;
+pub mod mechanism;
 pub mod policy;
 pub mod sampling;
 mod trick;

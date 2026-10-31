@@ -194,6 +194,7 @@ fn comparison(reliability: Reliability) -> Comparison {
         chosen: Action::Play(c("SA")),
         best: Some(Action::Play(c("ST"))),
         reliability,
+        mechanisms: Vec::new(),
     }
 }
 

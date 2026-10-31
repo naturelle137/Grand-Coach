@@ -112,98 +112,111 @@ pub struct HiddenCards {
 impl HiddenCards {
     /// The hidden cards as `view.seat` sees them.
     pub fn from_view(view: &PlayerView) -> Result<HiddenCards, Vec<Diagnostic>> {
-        let k = Knowledge::from_view(view);
-        let mut diagnostics = Vec::new();
-        let mut seen = CardSet::EMPTY;
-        let revealed = view
-            .declarer_cards
-            .filter(|_| view.declarer != Some(view.seat));
-        let parts = [
-            k.own,
-            k.played,
-            view.own_skat.unwrap_or_default(),
-            revealed.unwrap_or_default(),
-        ];
-        for part in parts {
-            diagnostics.extend((seen & part).iter().map(Diagnostic::CardTwice));
-            seen |= part;
-        }
-        if view.hand.len() != usize::from(view.hand_sizes[view.seat.index()]) {
-            diagnostics.push(Diagnostic::HandSize(view.seat));
-        }
-        let mut played_by = [0usize; 3];
-        for trick in &view.tricks {
-            for i in 0..3 {
-                played_by[trick.seat_of(i).index()] += 1;
-            }
-        }
-        if let Some(leader) = view.current_trick.leader {
-            for i in 0..view.current_trick.len() {
-                played_by[Seat::from_index(leader.index() + i).index()] += 1;
-            }
-        }
-        let declarer_holds_12 = view
-            .declarer
-            .is_some_and(|d| view.hand_sizes[d.index()] == 12);
-        for seat in Seat::ALL {
-            let full = if declarer_holds_12 && view.declarer == Some(seat) {
-                12
-            } else {
-                10
-            };
-            if usize::from(view.hand_sizes[seat.index()]) + played_by[seat.index()] != full {
-                diagnostics.push(Diagnostic::HandSize(seat));
-            }
-        }
-
-        let unseen = CardSet::ALL - seen;
-        let mut known = World {
-            hands: [CardSet::EMPTY; 3],
-            skat: view.own_skat.unwrap_or_default(),
-        };
-        known.hands[view.seat.index()] = k.own;
-        let mut slots = Vec::new();
-        for seat in Seat::ALL {
-            if seat == view.seat {
-                continue;
-            }
-            if let (Some(cards), true) = (revealed, view.declarer == Some(seat)) {
-                known.hands[seat.index()] = cards;
-                for card in cards & k.voids[seat.index()] {
-                    diagnostics.push(Diagnostic::VoidViolated { seat, card });
-                }
-                continue;
-            }
-            slots.push(Slot {
-                place: Place::Seat(seat),
-                size: view.hand_sizes[seat.index()],
-                allowed: unseen - k.voids[seat.index()],
-            });
-        }
-        if view.own_skat.is_none() && !declarer_holds_12 {
-            slots.push(Slot {
-                place: Place::Skat,
-                size: 2,
-                allowed: unseen,
-            });
-        }
-        let places: u8 = slots.iter().map(|s| s.size).sum();
-        if usize::from(places) != unseen.len() {
-            diagnostics.push(Diagnostic::CardCount {
-                unseen: unseen.len() as u8,
-                places,
-            });
-        }
-        if !diagnostics.is_empty() {
-            return Err(diagnostics);
-        }
+        let (known, unseen, slots) = constraints(view)?;
         let hidden = HiddenCards::build(known, unseen, slots);
         if hidden.count() == 0 {
             return Err(vec![Diagnostic::NoConsistentDeal]);
         }
         Ok(hidden)
     }
+}
 
+/// The hard constraints of `view.seat`'s information set, without counting
+/// distributions: the known cards, the unseen cards and the places to fill
+/// ([`HiddenCards`] adds the counts). Shared with exact feasibility
+/// questions ([`crate::mechanism`]).
+pub(crate) fn constraints(
+    view: &PlayerView,
+) -> Result<(World, CardSet, Vec<Slot>), Vec<Diagnostic>> {
+    let k = Knowledge::from_view(view);
+    let mut diagnostics = Vec::new();
+    let mut seen = CardSet::EMPTY;
+    let revealed = view
+        .declarer_cards
+        .filter(|_| view.declarer != Some(view.seat));
+    let parts = [
+        k.own,
+        k.played,
+        view.own_skat.unwrap_or_default(),
+        revealed.unwrap_or_default(),
+    ];
+    for part in parts {
+        diagnostics.extend((seen & part).iter().map(Diagnostic::CardTwice));
+        seen |= part;
+    }
+    if view.hand.len() != usize::from(view.hand_sizes[view.seat.index()]) {
+        diagnostics.push(Diagnostic::HandSize(view.seat));
+    }
+    let mut played_by = [0usize; 3];
+    for trick in &view.tricks {
+        for i in 0..3 {
+            played_by[trick.seat_of(i).index()] += 1;
+        }
+    }
+    if let Some(leader) = view.current_trick.leader {
+        for i in 0..view.current_trick.len() {
+            played_by[Seat::from_index(leader.index() + i).index()] += 1;
+        }
+    }
+    let declarer_holds_12 = view
+        .declarer
+        .is_some_and(|d| view.hand_sizes[d.index()] == 12);
+    for seat in Seat::ALL {
+        let full = if declarer_holds_12 && view.declarer == Some(seat) {
+            12
+        } else {
+            10
+        };
+        if usize::from(view.hand_sizes[seat.index()]) + played_by[seat.index()] != full {
+            diagnostics.push(Diagnostic::HandSize(seat));
+        }
+    }
+
+    let unseen = CardSet::ALL - seen;
+    let mut known = World {
+        hands: [CardSet::EMPTY; 3],
+        skat: view.own_skat.unwrap_or_default(),
+    };
+    known.hands[view.seat.index()] = k.own;
+    let mut slots = Vec::new();
+    for seat in Seat::ALL {
+        if seat == view.seat {
+            continue;
+        }
+        if let (Some(cards), true) = (revealed, view.declarer == Some(seat)) {
+            known.hands[seat.index()] = cards;
+            for card in cards & k.voids[seat.index()] {
+                diagnostics.push(Diagnostic::VoidViolated { seat, card });
+            }
+            continue;
+        }
+        slots.push(Slot {
+            place: Place::Seat(seat),
+            size: view.hand_sizes[seat.index()],
+            allowed: unseen - k.voids[seat.index()],
+        });
+    }
+    if view.own_skat.is_none() && !declarer_holds_12 {
+        slots.push(Slot {
+            place: Place::Skat,
+            size: 2,
+            allowed: unseen,
+        });
+    }
+    let places: u8 = slots.iter().map(|s| s.size).sum();
+    if usize::from(places) != unseen.len() {
+        diagnostics.push(Diagnostic::CardCount {
+            unseen: unseen.len() as u8,
+            places,
+        });
+    }
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+    Ok((known, unseen, slots))
+}
+
+impl HiddenCards {
     fn build(known: World, unseen: CardSet, slots: Vec<Slot>) -> HiddenCards {
         let mut groups: Vec<(u8, Vec<Card>)> = Vec::new();
         for card in unseen {
