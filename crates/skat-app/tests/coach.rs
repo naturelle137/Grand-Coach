@@ -93,6 +93,8 @@ fn levels_and_requests() {
     let mut s = session(1, false);
     s.set_coach_budget(TINY);
     assert_eq!(s.coach_settings(), CoachSettings::default());
+    // A new session hides the estimates (D-52).
+    assert!(!s.coach_settings().show_figures);
     assert!(!s.coach_settings().warnings, "warning off by default");
     assert!(to_human(&mut s));
 
@@ -541,6 +543,8 @@ fn coach_output_is_reproducible() {
 fn requests_reveal_one_stage_at_a_time() {
     let mut s = session(9, false);
     s.set_coach_budget(TINY);
+    // Figures are off by default; shown explicitly here.
+    set(&mut s, CoachLevel::OnRequest, false);
     assert!(to_human(&mut s));
     run_coach(&mut s);
     let stage = |s: &Session| match s.view().coach.advice {
@@ -639,12 +643,14 @@ fn debriefing_names_the_bad_moment_after_the_game() {
     let last = s.view().coach.last_move.expect("a note");
     assert_eq!((last.action, last.note), (weak, Some(Note::ClearlyWeaker)));
     assert_eq!(s.view().coach.debriefing, None, "only after the game");
+    let mut forced = false;
     loop {
         s.run_opponents();
         if s.view().legal_actions.is_empty() {
             break;
         }
         run_coach(&mut s);
+        forced = s.view().legal_actions.len() == 1;
         let action = simple_action(&s.view());
         let events = s.execute(Command::Act(action)).unwrap();
         if events.iter().any(|e| matches!(e, AppEvent::Coach(_))) {
@@ -654,6 +660,10 @@ fn debriefing_names_the_bad_moment_after_the_game() {
     while s.coach_job().is_some() {
         run_coach(&mut s);
     }
+    // The last card of a game is forced: its note does not repeat above
+    // the debriefing.
+    assert!(forced, "the game ran to its last trick");
+    assert_eq!(s.view().coach.last_move, None);
     match s.view().coach.debriefing {
         Some(Debriefing::Ready(moments)) => {
             assert!(moments.iter().any(|m| m.kind == MomentKind::Bad
@@ -668,5 +678,7 @@ fn debriefing_names_the_bad_moment_after_the_game() {
         s.execute(Command::NextGame).unwrap();
         let coach = s.view().coach;
         assert_eq!((coach.last_move, coach.debriefing), (None, None));
+        // An explicitly chosen figure setting stays.
+        assert!(coach.settings.show_figures);
     }
 }

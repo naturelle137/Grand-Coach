@@ -68,9 +68,24 @@ complete, not forced reviews at most `BAD_MOMENTS` (3) worse or weak
 choices losing at least `MOMENT_POINTS` (5 Seeger-Fabian points), by
 expected loss, and at most `GOOD_MOMENTS` (2) important
 decisions decided best or equivalent, by the loss of the costliest natural
-weak option avoided (the `trap`); they are shown in game order with the
-better option, reasons, figures and what was known then. The warning
-(`Warning`) carries only the chosen option and its loss.
+weak option avoided (the `trap`). Of these at most `PRIMARY_MOMENTS` (3)
+remain (D-52): the costliest bad one, the good one with the costliest trap,
+then the others by the same measures, ties in game order; they are shown
+in game order. The warning (`Warning`) carries only the chosen option and
+its loss.
+
+Each moment's summary names the trick and decision, the chosen action and
+the model's judgement as the model's ("the model rates it clearly lower
+than …"); for a good moment also the trap the model rates clearly lower,
+without claiming the player weighed it. Since no strategic mechanism is
+evidenced yet, every summary says so instead of turning score differences
+into a cause. The collapsed "analysis details" hold the comparison per
+metric with its party (winning chance, ranking value, declarer game
+points, throw-in chance), the model rating of each named option, the
+figures (only with "show figures"), what was known and inferred, and the
+basis and assumptions (`MoveReview::basis`, `assumptions`). The summary
+never shows an estimate. After the game, a forced last move gets no note
+above the debriefing.
 
 ## Session lifecycle (`skat-app`)
 
@@ -78,8 +93,8 @@ better option, reasons, figures and what was known then. The warning
   action), **on request** (default; each `RequestAdvice` one stage),
   **important** (stage 2 on its own when important, help action too),
   **every move** (stage 1 on its own). Warning off by default (D-09),
-  independent of the level; "show figures" hides estimates but keeps the
-  reasoning and exact facts.
+  independent of the level; "show figures" (off by default, D-52) hides
+  estimates but keeps the reasoning and exact facts.
 - With the level not off, every own decision is analysed for the note
   (`CoachView::last_move`) and the debriefing (`CoachView::debriefing`,
   once the game is over). A decision played before its analysis finished
