@@ -434,7 +434,14 @@ impl GrandCoachApp {
         let i = &self.i18n;
         let figures = coach.settings.show_figures;
         ui.separator();
-        let note = coach.last_move.as_ref().map(|last| coach::note(i, last));
+        let mut note: Vec<_> = coach
+            .last_move
+            .iter()
+            .map(|last| coach::note(i, last))
+            .collect();
+        if let Some(l) = coach.last_move.as_ref().and_then(|m| m.lesson.as_ref()) {
+            note.extend(coach::lesson(i, view, l));
+        }
         let mut lines = Vec::new();
         let debriefing = coach
             .debriefing
@@ -469,7 +476,7 @@ impl GrandCoachApp {
         }
         let details = i.t("coach-details");
         egui::ScrollArea::vertical().show(ui, |ui| {
-            show_lines(ui, note.as_slice());
+            show_lines(ui, &note);
             if let Some(d) = debriefing {
                 show_lines(ui, &d.lines);
                 for (n, m) in d.moments.into_iter().enumerate() {

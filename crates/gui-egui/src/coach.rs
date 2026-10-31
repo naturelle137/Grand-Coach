@@ -11,10 +11,13 @@
 
 use skat_app::coach_model::{
     Amount, Assumption, Basis, CardClass, ComparedOption, Consideration, Decision, Estimate,
-    Follow, Hints, Judgement, Moment, MomentKind, MoveReview, Note, Objective, Observation, Place,
-    Reason, Role, Situation, Stage, Warning,
+    Follow, Hints, Judgement, LessonContent, Moment, MomentKind, MoveReview, Note, Objective,
+    Observation, Place, Reason, Role, Situation, Stage, TrumpfSets, Warning,
 };
-use skat_app::{Action, Contract, Debriefing, LastMove, PlayerId, Seat, TableView, Unavailable};
+use skat_app::{
+    Action, CardSet, Contract, Debriefing, GameType, LastMove, PlayerId, Seat, TableView,
+    Unavailable,
+};
 
 use crate::i18n::I18n;
 use crate::text;
@@ -204,7 +207,164 @@ fn fact(i18n: &I18n, view: &TableView, o: Observation) -> String {
             "coach-fact-kontra-eligible",
             &[("player", name(seat).into())],
         ),
+        Observation::TrumpfSets(sets) => i18n.tf(
+            "coach-fact-trumpf-unseen",
+            &[("count", sets.unseen.len().into())],
+        ),
     }
+}
+
+/// Cards in display order of `game`, highest first.
+fn card_list(i18n: &I18n, cards: CardSet, game: GameType) -> String {
+    let names: Vec<String> = skat_app::sort_hand(cards, Some(game))
+        .into_iter()
+        .map(|c| text::card(i18n, c))
+        .collect();
+    names.join(", ")
+}
+
+/// The attention question of a lesson, before the move (D-49: it names no
+/// option and gives no answer).
+fn lesson_question(i18n: &I18n, lesson: &LessonContent) -> Vec<Line> {
+    let id = match lesson {
+        LessonContent::RemainingTrumpf { .. } => "coach-lesson-remaining-trumpf-question",
+        LessonContent::ProvenVoid { .. } => "coach-lesson-proven-void-question",
+    };
+    vec![
+        line(i18n.t("coach-section-lesson"), Style::Heading),
+        line(i18n.t(id), Style::Strong),
+    ]
+}
+
+/// A lesson after the move: the evidence with the cards it rests on, the
+/// exception and the transfer question.
+pub fn lesson(i18n: &I18n, view: &TableView, lesson: &LessonContent) -> Vec<Line> {
+    let mut out = vec![line(i18n.t("coach-section-lesson-review"), Style::Heading)];
+    match lesson {
+        LessonContent::RemainingTrumpf { game, sets } => {
+            out.extend(remaining_trumpf(i18n, *game, sets));
+        }
+        LessonContent::ProvenVoid { game, voids } => {
+            let name = |seat: Seat| text::player(i18n, seat_player(view, seat));
+            let mut tail: Vec<Line> = Vec::new();
+            for v in voids {
+                let (what, follow) = match v.follow {
+                    Follow::Trumpf => (i18n.t("coach-lesson-class-trumpf"), "trumpf"),
+                    Follow::Farbe(suit) => (text::suit(i18n, suit), "suit"),
+                };
+                out.push(line(
+                    i18n.tf(
+                        "coach-lesson-proven-void-evidence",
+                        &[
+                            ("trick", v.trick.into()),
+                            ("player", name(v.seat).into()),
+                            ("card", text::card(i18n, v.card).into()),
+                            ("led", text::card(i18n, v.led).into()),
+                            ("class", what.clone().into()),
+                            ("follow", follow.into()),
+                        ],
+                    ),
+                    Style::Normal,
+                ));
+                let case = match (game, v.follow) {
+                    (GameType::Null, _) => "null",
+                    (_, Follow::Trumpf) => "trumpf",
+                    _ => "suit",
+                };
+                for l in [
+                    line(
+                        i18n.tf(
+                            "coach-lesson-proven-void-exception",
+                            &[("case", case.into()), ("class", what.clone().into())],
+                        ),
+                        Style::Normal,
+                    ),
+                    line(
+                        i18n.tf(
+                            "coach-lesson-proven-void-transfer",
+                            &[("class", what.into())],
+                        ),
+                        Style::Strong,
+                    ),
+                ] {
+                    if !tail.contains(&l) {
+                        tail.push(l);
+                    }
+                }
+            }
+            // Exceptions first, then the transfer questions.
+            tail.sort_by_key(|l| l.style == Style::Strong);
+            out.extend(tail);
+        }
+    }
+    out
+}
+
+fn remaining_trumpf(i18n: &I18n, game: GameType, sets: &TrumpfSets) -> Vec<Line> {
+    let kind = if game == GameType::Grand {
+        "grand"
+    } else {
+        "suit"
+    };
+    let skat = if sets.skat_unknown {
+        "unknown"
+    } else {
+        "known"
+    };
+    let count = |id: &str, cards: CardSet| {
+        line(
+            i18n.tf(
+                id,
+                &[
+                    ("count", cards.len().into()),
+                    ("cards", card_list(i18n, cards, game).into()),
+                    ("skat", skat.into()),
+                ],
+            ),
+            Style::Normal,
+        )
+    };
+    let mut out = vec![line(
+        i18n.tf(
+            "coach-lesson-remaining-trumpf-total",
+            &[
+                ("kind", kind.into()),
+                ("game", text::game_type(i18n, game).into()),
+                ("count", sets.total.len().into()),
+            ],
+        ),
+        Style::Normal,
+    )];
+    out.push(count("coach-lesson-remaining-trumpf-own", sets.own));
+    out.push(count("coach-lesson-remaining-trumpf-played", sets.played));
+    if !sets.own_skat.is_empty() {
+        out.push(count("coach-lesson-remaining-trumpf-skat", sets.own_skat));
+    }
+    if !sets.revealed.is_empty() {
+        out.push(count(
+            "coach-lesson-remaining-trumpf-revealed",
+            sets.revealed,
+        ));
+    }
+    let mut unseen = count("coach-lesson-remaining-trumpf-unseen", sets.unseen);
+    unseen.style = Style::Strong;
+    out.push(unseen);
+    out.push(line(
+        if sets.unseen.is_empty() {
+            i18n.t("coach-lesson-remaining-trumpf-exception-none")
+        } else {
+            i18n.tf(
+                "coach-lesson-remaining-trumpf-exception",
+                &[("skat", skat.into())],
+            )
+        },
+        Style::Normal,
+    ));
+    out.push(line(
+        i18n.t("coach-lesson-remaining-trumpf-transfer"),
+        Style::Strong,
+    ));
+    out
 }
 
 fn inferred(
@@ -430,6 +590,9 @@ pub fn hints(i18n: &I18n, view: &TableView, h: &Hints, figures: bool) -> Vec<Lin
     ];
     if !complete {
         out.push(line(i18n.t("coach-provisional"), Style::Strong));
+    }
+    if let Some(l) = &h.lesson {
+        out.extend(lesson_question(i18n, l));
     }
     out.extend(considerations(i18n, view, &h.considerations, figures));
     if let Some(s) = &h.situation {
@@ -1020,6 +1183,7 @@ mod tests {
             },
             comparison,
             teaching: model::Teaching::Fallback,
+            lesson: None,
         }
     }
 
@@ -1101,6 +1265,7 @@ mod tests {
                     bid: 18,
                     hand_game: Some(false),
                     note: Some(note),
+                    lesson: None,
                 };
                 super::note(&i18n, &last).text
             };
@@ -1235,5 +1400,146 @@ mod tests {
                 )));
             }
         }
+    }
+
+    fn texts(lines: &[Line]) -> Vec<&str> {
+        lines.iter().map(|l| l.text.as_str()).collect()
+    }
+
+    /// A Herz game seen by a defender after a Trumpf trick: hand-made
+    /// sets (11 Trumpf: own 2, played 3, unseen 6, unknown Skat).
+    fn herz_sets() -> TrumpfSets {
+        let h = |r| Card::new(Suit::Herz, r);
+        let own: CardSet = [Card::bube(Suit::Pik), h(Rank::Ass)].into_iter().collect();
+        let played: CardSet = [Card::bube(Suit::Kreuz), h(Rank::Sieben), h(Rank::Acht)]
+            .into_iter()
+            .collect();
+        let total = GameType::Farbe(Suit::Herz).trumps();
+        TrumpfSets {
+            total,
+            own,
+            played,
+            own_skat: CardSet::EMPTY,
+            revealed: CardSet::EMPTY,
+            unseen: total - own - played,
+            skat_unknown: true,
+        }
+    }
+
+    #[test]
+    fn remaining_trumpf_lesson_cites_the_cards_and_assigns_no_seat() {
+        let view = table();
+        let lesson = LessonContent::RemainingTrumpf {
+            game: GameType::Farbe(Suit::Herz),
+            sets: herz_sets(),
+        };
+        let de = I18n::new(Language::De);
+        assert_eq!(
+            texts(&super::lesson(&de, &view, &lesson)),
+            [
+                "Was sicher feststeht",
+                "Im Herz-Spiel gibt es 11 Trumpf: die 4 Buben und die 7 Herz-Karten.",
+                "In deiner Hand: 2 (Pik-Bube, Herz-Ass).",
+                "Schon gespielt: 3 (Kreuz-Bube, Herz-Acht, Herz-Sieben).",
+                "Nicht gesehen: 6 (Herz-Bube, Karo-Bube, Herz-Zehn, Herz-König, Herz-Dame, Herz-Neun), in einer verdeckten Hand oder im Skat.",
+                "Achtung: Wer die nicht gesehenen Trumpf hat, steht damit nicht fest. Sie können auf die verdeckten Hände verteilt sein oder im Skat liegen.",
+                "Beim nächsten Trumpfstich: Wie viele Trumpf sind danach noch nicht gesehen?",
+            ]
+        );
+        // Known Skat with a discarded Trumpf, nothing unseen (exhausted).
+        let mut sets = herz_sets();
+        sets.own_skat = sets.unseen;
+        sets.unseen = CardSet::EMPTY;
+        sets.skat_unknown = false;
+        let exhausted = LessonContent::RemainingTrumpf {
+            game: GameType::Grand,
+            sets,
+        };
+        let en = I18n::new(Language::En);
+        let lines = super::lesson(&en, &view, &exhausted);
+        let text = texts(&lines);
+        assert_eq!(text[1], "In Grand only the 11 Jacks are trumps.");
+        assert!(
+            text[4].starts_with("In the Skat you discarded: 6 ("),
+            "{text:?}"
+        );
+        assert_eq!(text[5], "Not seen: none. No trump is concealed any more.");
+        assert_eq!(
+            text[6],
+            "Note: this only tells you about trumps, not about the side suits."
+        );
+        // Before the move only the question, no counts.
+        let question = texts(&lesson_question(&de, &lesson)).join(" ");
+        assert!(!question.chars().any(|c| c.is_ascii_digit()), "{question}");
+    }
+
+    #[test]
+    fn proven_void_lesson_cites_the_trick_and_teaches_an_exclusion() {
+        let view = table();
+        let seat = Seat::Mittelhand;
+        let void = model::ProvenVoid {
+            seat,
+            follow: Follow::Farbe(Suit::Pik),
+            trick: 3,
+            led: Card::new(Suit::Pik, Rank::Ass),
+            card: Card::new(Suit::Karo, Rank::Sieben),
+        };
+        for (language, expected) in [
+            (
+                Language::De,
+                [
+                    "Stich 3: {p} hat Karo-Sieben auf Pik-Ass gespielt, also nicht Pik bedient. Wer bedienen kann, muss bedienen (ISkO) – {p} hat kein Pik mehr.",
+                    "Das schließt nur Pik aus. Wer frei ist, darf stechen oder abwerfen – ob er das tut und wer den Stich gewinnt, folgt daraus nicht.",
+                    "Wenn wieder Pik gespielt wird: Wer kann dann noch bedienen?",
+                ],
+            ),
+            (
+                Language::En,
+                [
+                    "Trick 3: {p} played Seven of Diamonds to Ace of Spades and so did not follow Spades. A player who can follow suit must (ISkO) – {p} has no Spades left.",
+                    "This only rules out Spades. A player who is void may trump or discard – whether they do and who wins the trick does not follow from it.",
+                    "When Spades is led again: who can still follow?",
+                ],
+            ),
+        ] {
+            let i18n = I18n::new(language);
+            let p = text::player(&i18n, seat_player(&view, seat));
+            let lesson = LessonContent::ProvenVoid {
+                game: GameType::Farbe(Suit::Herz),
+                voids: vec![void],
+            };
+            let lines = super::lesson(&i18n, &view, &lesson);
+            let expected: Vec<String> = expected.iter().map(|e| e.replace("{p}", &p)).collect();
+            assert_eq!(texts(&lines)[1..], expected);
+        }
+        // Trumpf void and Null: other exceptions.
+        let de = I18n::new(Language::De);
+        let trumpf = LessonContent::ProvenVoid {
+            game: GameType::Grand,
+            voids: vec![model::ProvenVoid {
+                follow: Follow::Trumpf,
+                led: Card::bube(Suit::Kreuz),
+                ..void
+            }],
+        };
+        let lines = super::lesson(&de, &view, &trumpf);
+        assert!(
+            lines[1].text.ends_with("keinen Trumpf mehr."),
+            "{:?}",
+            lines[1]
+        );
+        assert_eq!(
+            lines[2].text,
+            "Das schließt nur Trumpf aus. Wer einen späteren Stich gewinnt, folgt daraus nicht."
+        );
+        let null = LessonContent::ProvenVoid {
+            game: GameType::Null,
+            voids: vec![void],
+        };
+        assert!(
+            super::lesson(&de, &view, &null)[2]
+                .text
+                .starts_with("Im Null gibt es keinen Trumpf")
+        );
     }
 }

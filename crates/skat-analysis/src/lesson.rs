@@ -30,7 +30,7 @@ use skat_core::{Action, BidRecord, Call, Card, CardSet, GameType, Phase, PlayerV
 use crate::analysis::{Analysis, CardClass, Inference, Observation, Status, utility};
 
 /// Version of this contract; raised when the meaning of a field changes.
-pub const CONTRACT_VERSION: u16 = 1;
+pub const CONTRACT_VERSION: u16 = 2;
 
 /// The deciding seat's role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -144,6 +144,10 @@ pub enum Source {
         index: u8,
         /// The seat.
         seat: Seat,
+        /// The card led in that trick.
+        led: Card,
+        /// The card `seat` played.
+        card: Card,
     },
     /// The bidding call with this index in the bidding history.
     Bid {
@@ -260,6 +264,24 @@ fn sources(view: &PlayerView, observation: &Observation) -> Vec<Source> {
         Observation::TrumpsOut { .. } | Observation::AugenOut { .. } => {
             vec![Source::OwnHand, Source::Played]
         }
+        Observation::TrumpfSets(sets) => {
+            let mut out = vec![Source::OwnHand, Source::Played];
+            if !sets.skat_unknown {
+                out.push(Source::OwnSkat);
+            }
+            if view.declarer_cards.is_some() && view.declarer != Some(view.seat) {
+                out.push(Source::Revealed);
+            }
+            out.extend(trick_cards(view).filter_map(|(index, seat, led, card)| {
+                sets.played.contains(card).then_some(Source::Trick {
+                    index,
+                    seat,
+                    led,
+                    card,
+                })
+            }));
+            out
+        }
         Observation::AugenWon { .. } => vec![Source::Played],
         Observation::SkatKnown { .. } => vec![Source::OwnSkat],
         Observation::BidShown { seat, value } => {
@@ -269,12 +291,9 @@ fn sources(view: &PlayerView, observation: &Observation) -> Vec<Source> {
     }
 }
 
-/// The first card `seat` played where `failed(led, card)` holds.
-fn first_failure(
-    view: &PlayerView,
-    seat: Seat,
-    failed: impl Fn(Card, Card) -> bool,
-) -> Option<Source> {
+/// Every card played so far as (trick index, seat, led card, card), in
+/// order, the trick in progress last.
+fn trick_cards(view: &PlayerView) -> impl Iterator<Item = (u8, Seat, Card, Card)> + '_ {
     let completed = view
         .tricks
         .iter()
@@ -283,18 +302,28 @@ fn first_failure(
     completed
         .chain(current)
         .enumerate()
-        .find_map(|(index, (leader, cards))| {
-            let (leader, led) = (leader?, cards[0]?);
-            (1..3).find_map(|i| {
-                let card = cards[i]?;
-                (Seat::from_index(leader.index() + i) == seat && failed(led, card)).then_some(
-                    Source::Trick {
-                        index: index as u8,
-                        seat,
-                    },
-                )
+        .flat_map(|(index, (leader, cards))| {
+            (0..3).filter_map(move |i| {
+                let (leader, led, card) = (leader?, cards[0]?, cards[i]?);
+                Some((index as u8, Seat::from_index(leader.index() + i), led, card))
             })
         })
+}
+
+/// The first card `seat` played where `failed(led, card)` holds.
+fn first_failure(
+    view: &PlayerView,
+    seat: Seat,
+    failed: impl Fn(Card, Card) -> bool,
+) -> Option<Source> {
+    trick_cards(view).find_map(|(index, s, led, card)| {
+        (s == seat && card != led && failed(led, card)).then_some(Source::Trick {
+            index,
+            seat,
+            led,
+            card,
+        })
+    })
 }
 
 /// The first call in which `seat` bid or held `value`.
@@ -425,6 +454,8 @@ pub enum FactKind {
     Void,
     /// [`Observation::TrumpsOut`].
     TrumpsOut,
+    /// [`Observation::TrumpfSets`].
+    TrumpfSets,
     /// [`Observation::AugenWon`].
     AugenWon,
     /// [`Observation::AugenOut`].
@@ -443,6 +474,7 @@ impl FactKind {
         match observation {
             Observation::Void { .. } => FactKind::Void,
             Observation::TrumpsOut { .. } => FactKind::TrumpsOut,
+            Observation::TrumpfSets(_) => FactKind::TrumpfSets,
             Observation::AugenWon { .. } => FactKind::AugenWon,
             Observation::AugenOut { .. } => FactKind::AugenOut,
             Observation::SkatKnown { .. } => FactKind::SkatKnown,
@@ -459,6 +491,10 @@ pub enum Condition {
     /// An exact fact of this kind is present (needs
     /// [`EvidenceClass::Exact`] permitted).
     Fact(FactKind),
+    /// An exact fact of this kind rests on a card of the trick in progress
+    /// or of the last completed trick: it is new since about the seat's
+    /// last card. Cites only those facts.
+    Recent(FactKind),
     /// A sample summary of this class is present (needs
     /// [`EvidenceClass::Sample`] permitted); proves nothing about the
     /// hidden cards.
@@ -604,6 +640,25 @@ impl Lesson {
                 EvidenceClass::Exact,
                 &|claim| matches!(claim, Claim::Fact(o) if FactKind::of(o) == kind),
             ),
+            Condition::Recent(kind) => {
+                let from = evidence.snapshot.tricks.saturating_sub(1);
+                cite(
+                    EvidenceClass::Exact,
+                    &|claim| matches!(claim, Claim::Fact(o) if FactKind::of(o) == kind),
+                )
+                .map(|cited| {
+                    cited
+                        .into_iter()
+                        .filter(|&i| {
+                            evidence.items[i]
+                                .sources
+                                .iter()
+                                .any(|s| matches!(s, Source::Trick { index, .. } if *index >= from))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .filter(|cited| !cited.is_empty())
+            }
             Condition::Sample(class) => cite(
                 EvidenceClass::Sample,
                 &|claim| matches!(claim, Claim::Sample(i) if i.class == class),
@@ -615,9 +670,51 @@ impl Lesson {
     }
 }
 
-/// The lesson catalogue, in selection order. No lesson is backed by
-/// independent fixtures yet (#43, #44), so it is empty and the coach always
-/// falls back to the plain model comparison.
+/// Key of the lesson on the remaining Trumpf ([`catalogue`]).
+pub const REMAINING_TRUMPF: &str = "remaining-trumpf";
+
+/// Key of the lesson on a void proven by not following suit ([`catalogue`]).
+pub const PROVEN_VOID: &str = "proven-void";
+
+/// The lesson catalogue, in selection order (`docs/coach.md`). Both are
+/// fact lessons on exact card knowledge during card play, backed by the
+/// fixtures in `tests/lesson.rs`:
+///
+/// 1. [`PROVEN_VOID`]: a seat did not follow the led class in the trick in
+///    progress or the last completed trick, so it holds no card of that
+///    class (Farbspiel, Grand, Null). It teaches an exclusion only.
+/// 2. [`REMAINING_TRUMPF`]: a Trumpf was played in the trick in progress or
+///    the last completed trick; where the Trumpf are, as far as the seat
+///    knows (Farbspiel and Grand; Null has no Trumpf). Unseen Trumpf are
+///    not assigned to a seat.
+///
+/// Older facts do not trigger them again, so the same fact is not repeated
+/// at every card.
 pub fn catalogue() -> Vec<Lesson> {
-    Vec::new()
+    let card_play = |games: Vec<GameKind>, kind: FactKind| Lesson {
+        id: LessonId {
+            key: Cow::Borrowed(match kind {
+                FactKind::Void => PROVEN_VOID,
+                _ => REMAINING_TRUMPF,
+            }),
+            version: 1,
+        },
+        kind: LessonKind::Fact,
+        support: Support::Supported,
+        applies: Applicability {
+            phases: vec![Phase::Spiel],
+            roles: Vec::new(),
+            games,
+        },
+        permitted: vec![EvidenceClass::Exact],
+        requires: vec![Condition::Recent(kind)],
+        excludes: Vec::new(),
+    };
+    vec![
+        card_play(
+            vec![GameKind::Suit, GameKind::Grand, GameKind::Null],
+            FactKind::Void,
+        ),
+        card_play(vec![GameKind::Suit, GameKind::Grand], FactKind::TrumpfSets),
+    ]
 }

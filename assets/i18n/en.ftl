@@ -280,6 +280,49 @@ coach-fact-augen-out = { $augen } Augen are still with the others or in the Skat
 coach-fact-skat-known = The Skat holds: { $cards }.
 coach-fact-bid-shown = { $player } bid up to { $value }.
 coach-fact-kontra-eligible = { $player } may still say Kontra.
+coach-fact-trumpf-unseen = You have not seen { $count } trumps yet.
+coach-section-lesson = What to look at
+coach-section-lesson-review = What is certain
+coach-lesson-class-trumpf = trumps
+coach-lesson-remaining-trumpf-question = Count: which trumps have you not seen yet, and where can they be?
+coach-lesson-remaining-trumpf-total = { $kind ->
+        [grand] In Grand only the { $count } Jacks are trumps.
+       *[suit] In a { $game } game there are { $count } trumps: the 4 Jacks and the 7 { $game } cards.
+    }
+coach-lesson-remaining-trumpf-own = In your hand: { $count ->
+        [0] none.
+       *[other] { $count } ({ $cards }).
+    }
+coach-lesson-remaining-trumpf-played = Already played: { $count ->
+        [0] none.
+       *[other] { $count } ({ $cards }).
+    }
+coach-lesson-remaining-trumpf-skat = In the Skat you discarded: { $count } ({ $cards }). Nobody holds them.
+coach-lesson-remaining-trumpf-revealed = Open in the declarer's hand: { $count } ({ $cards }).
+coach-lesson-remaining-trumpf-unseen = Not seen: { $count ->
+        [0] none. No trump is concealed any more.
+       *[other] { $count } ({ $cards }), in a concealed hand{ $skat ->
+            [unknown] {""} or in the Skat.
+           *[known] . You know the Skat.
+        }
+    }
+coach-lesson-remaining-trumpf-exception = { $skat ->
+        [unknown] Note: this does not tell you who holds the unseen trumps. They can be spread over the concealed hands or lie in the Skat.
+       *[known] Note: trumps in your own Skat are not the opponents' trumps. How the unseen ones are spread over the concealed hands is not known from this.
+    }
+coach-lesson-remaining-trumpf-exception-none = Note: this only tells you about trumps, not about the side suits.
+coach-lesson-remaining-trumpf-transfer = At the next trump trick: how many trumps will still be unseen after it?
+coach-lesson-proven-void-question = Did someone just fail to follow suit? What do you now know for sure about their cards?
+coach-lesson-proven-void-evidence = Trick { $trick }: { $player } played { $card } to { $led } and so did not follow { $class }. A player who can follow suit must (ISkO) – { $player } has no { $follow ->
+        [trumpf] { $class }
+       *[suit] { $class }
+    } left.
+coach-lesson-proven-void-exception = { $case ->
+        [trumpf] This only rules out trumps. Who wins a later trick does not follow from it.
+        [null] Null has no trumps: a player who is void discards. Who takes a later trick does not follow from it.
+       *[suit] This only rules out { $class }. A player who is void may trump or discard – whether they do and who wins the trick does not follow from it.
+    }
+coach-lesson-proven-void-transfer = When { $class } is led again: who can still follow?
 coach-holder-skat = The Skat
 coach-class-trumps = trumps
 coach-class-jacks = Jacks

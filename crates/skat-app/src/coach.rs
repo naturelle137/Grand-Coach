@@ -13,8 +13,8 @@
 use serde::{Deserialize, Serialize};
 use skat_ai::{Budget, Cancel};
 use skat_coach::{
-    Explanation, Hints, Moment, MoveReview, Note, Stage, Status, Warning, advise, decision_seed,
-    hints, moments, review,
+    Explanation, Hints, LessonContent, Moment, MoveReview, Note, Stage, Status, Warning, advise,
+    decision_seed, hints, moments, review,
 };
 use skat_core::{Action, PlayerView};
 
@@ -230,6 +230,9 @@ pub struct LastMove {
     pub hand_game: Option<bool>,
     /// The note; `None` while the analysis is still running.
     pub note: Option<Note>,
+    /// The lesson of that decision with its evidence, exception and
+    /// transfer question (after the move only); `None` without one.
+    pub lesson: Option<LessonContent>,
 }
 
 /// The end-of-game debriefing (D-49).
@@ -408,9 +411,15 @@ impl CoachState {
             bid: view.bid,
             hand_game: view.hand_game,
             note: None,
+            lesson: None,
         };
         match self.result(key).map(|r| r.outcome.clone()) {
-            Some(Ok(e)) => last.note = self.store_review(key, &e, action),
+            Some(Ok(e)) => {
+                if let Some((note, lesson)) = self.store_review(key, &e, action) {
+                    last.note = Some(note);
+                    last.lesson = lesson;
+                }
+            }
             Some(Err(Unavailable::Failed)) => last.note = Some(Note::Uncertain),
             // Cancelled or still running: analysed again after the move.
             Some(Err(Unavailable::Cancelled)) | None => self.queue.push(Queued {
@@ -422,12 +431,17 @@ impl CoachState {
         self.last_move = Some((key, last));
     }
 
-    /// Stores the review of `action`; its note.
-    fn store_review(&mut self, key: DecisionKey, e: &Explanation, action: Action) -> Option<Note> {
+    /// Stores the review of `action`; its note and lesson.
+    fn store_review(
+        &mut self,
+        key: DecisionKey,
+        e: &Explanation,
+        action: Action,
+    ) -> Option<(Note, Option<LessonContent>)> {
         let r = review(e, action)?;
-        let note = r.note();
+        let out = (r.note(), r.lesson.clone());
         self.reviews.push((key, r));
-        Some(note)
+        Some(out)
     }
 
     /// The oldest queued review job.
@@ -447,22 +461,23 @@ impl CoachState {
         let Some(i) = self.queue.iter().position(|q| q.key == result.key) else {
             return false;
         };
-        let note = match &result.outcome {
+        let (note, lesson) = match &result.outcome {
             Err(Unavailable::Cancelled) => return true,
             Err(Unavailable::Failed) => {
                 self.queue.remove(i);
-                Note::Uncertain
+                (Note::Uncertain, None)
             }
             Ok(e) => {
                 let q = self.queue.remove(i);
                 self.store_review(q.key, e, q.action)
-                    .unwrap_or(Note::Uncertain)
+                    .unwrap_or((Note::Uncertain, None))
             }
         };
         if let Some((k, last)) = &mut self.last_move
             && *k == result.key
         {
             last.note = Some(note);
+            last.lesson = lesson;
         }
         true
     }

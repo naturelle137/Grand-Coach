@@ -22,20 +22,21 @@
 //! Lessons (D-53): the analysis gathers the permitted [`Evidence`] and
 //! checks lesson predicates ([`Lesson::check`]); the coach only selects a
 //! lesson with [`teach`] and falls back to the model comparison when none
-//! applies.
+//! applies. [`lesson_content`] hands the cited facts of a taught lesson to
+//! the frontend as plain data.
 
 use skat_analysis::lesson::{catalogue, compare as compare_options, gather};
 use skat_analysis::{Budget, Cancel, analyze, utility};
-use skat_core::{Action, Contract, GameType, KontraLevel, Phase, PlayerView, Seat};
+use skat_core::{Action, Card, Contract, GameType, KontraLevel, Phase, PlayerView, Seat};
 
 pub use skat_analysis::lesson::{
     Check, Claim, Comparison, Evidence, EvidenceClass, Item, Lesson, LessonId, LessonKind,
-    Reliability, Role, Snapshot, Source,
+    PROVEN_VOID, REMAINING_TRUMPF, Reliability, Role, Snapshot, Source,
 };
 
 pub use skat_analysis::sampling::Place;
 pub use skat_analysis::{
-    Analysis, Assumption, CardClass, Estimate, Inference, Observation, Status,
+    Analysis, Assumption, CardClass, Estimate, Inference, Observation, Status, TrumpfSets,
 };
 pub use skat_core::Follow;
 
@@ -349,6 +350,91 @@ pub fn teach(lessons: &[Lesson], evidence: &Evidence, comparison: Option<&Compar
         .unwrap_or(Teaching::Fallback)
 }
 
+/// What a taught lesson says, as plain data for the frontend's copy
+/// (`docs/coach.md`): the attention question before the move, the
+/// evidence, exception and transfer question after it. Taken from the
+/// cited exact evidence only; nothing is computed here.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LessonContent {
+    /// [`REMAINING_TRUMPF`]: where the Trumpf are as far as the seat knows.
+    RemainingTrumpf {
+        /// The game (Farbspiel or Grand).
+        game: GameType,
+        /// The Trumpf by what the seat knows; unseen ones are not assigned
+        /// to a seat.
+        sets: TrumpfSets,
+    },
+    /// [`PROVEN_VOID`]: seats that did not follow the led class.
+    ProvenVoid {
+        /// The game.
+        game: GameType,
+        /// The new voids, each with the card that proved it.
+        voids: Vec<ProvenVoid>,
+    },
+}
+
+/// A void proven by not following suit, with its evidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProvenVoid {
+    /// The seat that did not follow.
+    pub seat: Seat,
+    /// The class it holds no card of.
+    pub follow: Follow,
+    /// The trick, from 1.
+    pub trick: u8,
+    /// The card led.
+    pub led: Card,
+    /// The card the seat played instead.
+    pub card: Card,
+}
+
+/// The content of `teaching` from the items of `evidence` it cites; `None`
+/// for the fallback, an unknown lesson or missing evidence (then the
+/// frontend shows no lesson).
+pub fn lesson_content(teaching: &Teaching, evidence: &Evidence) -> Option<LessonContent> {
+    let Teaching::Lesson { id, items } = teaching else {
+        return None;
+    };
+    let game = evidence.snapshot.game?;
+    let cited = || items.iter().filter_map(|&i| evidence.items.get(i));
+    match id.key.as_ref() {
+        REMAINING_TRUMPF => cited().find_map(|item| match item.claim {
+            Claim::Fact(Observation::TrumpfSets(sets)) => {
+                Some(LessonContent::RemainingTrumpf { game, sets })
+            }
+            _ => None,
+        }),
+        PROVEN_VOID => {
+            let voids: Vec<ProvenVoid> = cited()
+                .filter_map(|item| {
+                    let Claim::Fact(Observation::Void { seat, follow }) = item.claim else {
+                        return None;
+                    };
+                    item.sources.iter().find_map(|s| match *s {
+                        Source::Trick {
+                            index,
+                            seat: s,
+                            led,
+                            card,
+                        } if s == seat => Some(ProvenVoid {
+                            seat,
+                            follow,
+                            trick: index + 1,
+                            led,
+                            card,
+                        }),
+                        _ => None,
+                    })
+                })
+                .collect();
+            (!voids.is_empty()).then_some(LessonContent::ProvenVoid { game, voids })
+        }
+        _ => None,
+    }
+}
+
 /// Why the coach warns before an action. It names no alternative (D-49):
 /// the better option is shown only after the game.
 #[derive(Clone, Debug, PartialEq)]
@@ -451,10 +537,14 @@ pub struct Hints {
     pub evidence: Evidence,
     /// A fact lesson at most: mechanisms need the move first.
     pub teaching: Teaching,
+    /// What that lesson says; before the move a frontend shows only its
+    /// attention question.
+    pub lesson: Option<LessonContent>,
 }
 
 /// The coach's hints for `e` up to `stage`.
 pub fn hints(e: &Explanation, stage: Stage) -> Hints {
+    let teaching = teach(&catalogue(), &e.evidence, None);
     let situation = (stage >= Stage::Situation).then(|| SituationHint {
         situation: match e.verdict {
             Verdict::Forced => Situation::Forced,
@@ -489,7 +579,8 @@ pub fn hints(e: &Explanation, stage: Stage) -> Hints {
         basis: e.basis,
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
-        teaching: teach(&catalogue(), &e.evidence, None),
+        lesson: lesson_content(&teaching, &e.evidence),
+        teaching,
     }
 }
 
@@ -549,6 +640,8 @@ pub struct MoveReview {
     pub comparison: Comparison,
     /// The lesson, or the fallback to the model comparison.
     pub teaching: Teaching,
+    /// What that lesson says.
+    pub lesson: Option<LessonContent>,
 }
 
 impl MoveReview {
@@ -574,6 +667,7 @@ impl MoveReview {
 /// one of its options.
 pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
     let comparison = *e.comparisons.iter().find(|c| c.chosen == chosen)?;
+    let teaching = teach(&catalogue(), &e.evidence, Some(&comparison));
     let chosen = e.option(chosen)?.clone();
     let trap = e
         .options
@@ -598,7 +692,8 @@ pub fn review(e: &Explanation, chosen: Action) -> Option<MoveReview> {
         assumptions: e.assumptions.clone(),
         evidence: e.evidence.clone(),
         comparison,
-        teaching: teach(&catalogue(), &e.evidence, Some(&comparison)),
+        lesson: lesson_content(&teaching, &e.evidence),
+        teaching,
     })
 }
 
@@ -851,6 +946,8 @@ fn considerations(
         .iter()
         .filter(|o| match o {
             Observation::Void { .. } | Observation::TrumpsOut { .. } => playing,
+            // Shown by the remaining-Trumpf lesson only.
+            Observation::TrumpfSets(_) => false,
             Observation::AugenWon {
                 declarer,
                 defenders,

@@ -101,7 +101,7 @@ pub fn message_ids(source: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn ids(source: &str) -> BTreeSet<String> {
         message_ids(source).into_iter().collect()
@@ -153,6 +153,42 @@ mod tests {
         assert!(missing.is_empty(), "missing translations: {missing:?}");
         let unused: Vec<_> = ftl.iter().filter(|id| !code.contains(*id)).collect();
         assert!(unused.is_empty(), "unused messages: {unused:?}");
+    }
+
+    /// The variables each message of `source` uses.
+    fn variables(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in source.lines() {
+            if let Some((id, _)) = line.split_once(" =")
+                && message_ids(line).len() == 1
+            {
+                current = Some(id.to_owned());
+            } else if !line.starts_with(' ') {
+                current = None;
+            }
+            if let Some(id) = &current {
+                let vars = out.entry(id.clone()).or_default();
+                for part in line.split('$').skip(1) {
+                    let name: String = part
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                        .collect();
+                    vars.insert(name);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn both_languages_use_the_same_arguments() {
+        let de = variables(DE_FTL);
+        let en = variables(EN_FTL);
+        assert!(de["coach-lesson-proven-void-evidence"].contains("follow"));
+        for (id, vars) in &de {
+            assert_eq!(Some(vars), en.get(id), "{id}");
+        }
     }
 
     #[test]
@@ -212,6 +248,11 @@ mod tests {
                     "trick",
                     "judgement",
                     "trap",
+                    "kind",
+                    "skat",
+                    "led",
+                    "follow",
+                    "case",
                 ] {
                     args.set(name, "x");
                 }

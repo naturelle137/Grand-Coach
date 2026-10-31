@@ -58,8 +58,12 @@ It reuses one `Analysis`; it runs no search of its own.
   items. A `Fact` lesson may not cite comparisons and holds with an
   incomplete search; a `Mechanism` needs a comparison (after the move)
   that is reliable. Unsupported lessons never apply.
-- `catalogue()` is empty until lessons are backed by independent fixtures
-  (#43, #44).
+- `catalogue()` holds the two exact lessons of D-55, `proven-void` and
+  `remaining-trumpf` ([coach.md](coach.md#exact-lessons-d-55)). The
+  condition `Recent(kind)` holds for facts resting on a card of the trick
+  in progress or the last completed trick, so a lesson is not repeated at
+  every card. Contract version 2: `Source::Trick` names the led card and
+  the card played.
 
 ## Knowledge (card counter)
 
@@ -67,6 +71,16 @@ Exact facts from the view (`Knowledge`): own cards, played cards, Augen
 won per seat, trumps out, the own discard (declarer only, after Drücken),
 the Ouvert declarer's cards (after the reveal) and voids proven by not
 following suit (the whole follow class: Trumpf or one side suit).
+
+Count semantics (D-55): `trumps_out` (observation `TrumpsOut`) counts the
+Trumpf neither held nor played, so it includes a Trumpf in the own
+discarded Skat and in a revealed Ouvert hand; its meaning is unchanged.
+`trumpf_sets` (observation `TrumpfSets`, Farbspiel and Grand only) splits
+the Trumpf into disjoint sets: own hand, played, own discarded Skat
+(known, in nobody's hand), revealed Ouvert cards and unseen. Unseen
+Trumpf lie in a concealed hand or, when the seat does not know the Skat
+(defender, Hand declarer), in the Skat; which seat holds them is not
+part of the fact.
 
 ## Hidden cards (opponent model)
 
